@@ -75,7 +75,8 @@ Verified findings (with sources):
 
 Reviewer notes: {critique}
 
-User preferences learned from past feedback (follow them):
+User preferences learned from past feedback (apply them only where they fit
+this report; never mention the preferences themselves):
 {lessons}
 
 Research mode: {mode_label}

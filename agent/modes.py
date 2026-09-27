@@ -25,7 +25,7 @@ class Mode:
 MODES: dict[str, Mode] = {m.key: m for m in [
     Mode(
         key="general",
-        label="🔎 General Research",
+        label="General Research",
         description="Any topic: search, read, and compile a cited report.",
         example="Compare LangGraph, CrewAI and AutoGen for building AI agents",
         planning="Cover background first, then specifics, then comparisons or outlook.",
@@ -38,7 +38,7 @@ MODES: dict[str, Mode] = {m.key: m for m in [
     ),
     Mode(
         key="competitor",
-        label="🏢 Competitor Intelligence",
+        label="Competitor Intelligence",
         description="Profile a company and its competitors: products, pricing, positioning, hiring, recent launches.",
         example="Who are the main competitors of Zoho CRM and how do they compare on pricing and features?",
         planning=(
@@ -60,7 +60,7 @@ MODES: dict[str, Mode] = {m.key: m for m in [
     ),
     Mode(
         key="market",
-        label="📊 Market Research",
+        label="Market Research",
         description="Size a market (TAM/SAM/SOM), growth rate, key players, drivers and trends.",
         example="What is the size and growth rate of the EV charging market in India?",
         planning=(
@@ -82,7 +82,7 @@ MODES: dict[str, Mode] = {m.key: m for m in [
     ),
     Mode(
         key="leads",
-        label="🎯 Lead Research",
+        label="Lead Research",
         description="Build a prospect list from an ideal-customer profile, with fit reasons and buying signals.",
         example="Engineering colleges in Bangalore that offer AI/ML programs and run placement drives",
         planning=(
@@ -98,7 +98,7 @@ MODES: dict[str, Mode] = {m.key: m for m in [
         ),
         report="""# Lead List: <ideal-customer profile>
 **TL;DR** - how many leads were found and the top 3 to contact first.
-## Lead Table   - Markdown table: # | Organisation | Location | Fit reason | Buying signal | Website [n]
+## Lead Table   - Markdown table: # | Organisation | Location | Fit reason | Buying signal | Source; the Source cell is the [n] backing that row. Leave a cell as "not found" rather than guessing
 ## Scoring      - rank leads High / Medium / Low fit with a one-line reason each
 ## Suggested Outreach Angle - 2-3 bullets on what to pitch based on the signals
 ## Limitations  - what could not be verified""",

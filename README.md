@@ -1,4 +1,4 @@
-# 🔎 Autonomous Research Agent
+# Autonomous Research Agent
 
 An LLM-powered **agentic research system** built for the *AI Agentic System Challenge* (Techvruk).
 Give it a research goal. It **plans** sub-questions, **reasons and acts** with tools, **observes**
@@ -28,10 +28,10 @@ what the critic checks, and the shape of the final report**. The graph itself do
 
 | Mode | Example goal | Report sections |
 |---|---|---|
-| 🔎 **General Research** | *Compare LangGraph, CrewAI and AutoGen* | Key Findings · Details · Limitations |
-| 🏢 **Competitor Intelligence** | *Who are Zoho CRM's main competitors and how do they compare on pricing?* | Competitor Comparison table · Company Profiles · Strategic Signals (launches, funding, hiring) · Opportunities & Threats |
-| 📊 **Market Research** | *Size and growth rate of the EV charging market in India* | Market Size & Growth table · TAM/SAM/SOM (with calculator-checked arithmetic) · Key Players · Drivers & Trends |
-| 🎯 **Lead Research** | *Engineering colleges in Bangalore with AI/ML programs* | Lead Table · Fit Scoring (High/Medium/Low) · Suggested Outreach Angle |
+| **General Research** | *Compare LangGraph, CrewAI and AutoGen* | Key Findings · Details · Limitations |
+| **Competitor Intelligence** | *Who are Zoho CRM's main competitors and how do they compare on pricing?* | Competitor Comparison table · Company Profiles · Strategic Signals (launches, funding, hiring) · Opportunities & Threats |
+| **Market Research** | *Size and growth rate of the EV charging market in India* | Market Size & Growth table · TAM/SAM/SOM (with calculator-checked arithmetic) · Key Players · Drivers & Trends |
+| **Lead Research** | *Engineering colleges in Bangalore with AI/ML programs* | Lead Table · Fit Scoring (High/Medium/Low) · Suggested Outreach Angle |
 
 Modes are plain data in [`agent/modes.py`](agent/modes.py), so adding a new one (e.g. a hiring
 tracker) takes one entry, not new code. Lead Research only collects public,
@@ -57,19 +57,19 @@ organisation-level contact routes and never guesses personal emails or phone num
 
 ```mermaid
 flowchart TD
-    U([User goal]) --> R[🧠 recall<br/>load lessons + related past reports]
-    R --> P[🗺️ plan<br/>LLM → ordered sub-questions]
-    P --> A[🤔 act<br/>LLM reasons about current sub-question]
-    A -- tool call --> T[🛠️ tools<br/>web_search · read_webpage<br/>calculator · search_past_research]
+    U([User goal]) --> R[recall<br/>load lessons + related past reports]
+    R --> P[plan<br/>LLM → ordered sub-questions]
+    P --> A[act<br/>LLM reasons about current sub-question]
+    A -- tool call --> T[tools<br/>web_search · read_webpage<br/>calculator · search_past_research]
     T -- observation --> A
-    A -- enough evidence --> REC[📌 record<br/>save finding + sources, reset scratchpad]
+    A -- enough evidence --> REC[record<br/>save finding + sources, reset scratchpad]
     REC -- more sub-questions --> A
-    REC -- all answered --> REF[🔍 reflect<br/>LLM critic: gaps?]
+    REC -- all answered --> REF[reflect<br/>LLM critic: gaps?]
     REF -- gaps & rounds left<br/>add follow-up questions --> A
-    REF -- sufficient --> W[✍️ write<br/>cited Markdown report]
-    W --> M[💾 remember<br/>store run in SQLite]
+    REF -- sufficient --> W[write<br/>cited Markdown report]
+    W --> M[remember<br/>store run in SQLite]
     M --> O([Report to user])
-    O -. 👍/👎 + feedback .-> L[📚 learn_from_feedback<br/>LLM distils reusable lessons]
+    O -. /+ feedback .-> L[learn_from_feedback<br/>LLM distils reusable lessons]
     L -. stored in memory .-> R
 ```
 
@@ -191,7 +191,7 @@ Full reports from real runs are in [`reports/`](reports/).
 **Feedback → learning:**
 
 ```
-User (👍): "Good tables. Next time always verify growth rates with the calculator tool
+User (): "Good tables. Next time always verify growth rates with the calculator tool
            and show the formula used."
 Learned:   - Verify growth rates using the calculator tool before reporting them.
            - Include the formulas used for any calculations in the report.

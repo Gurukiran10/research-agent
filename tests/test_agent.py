@@ -85,7 +85,7 @@ def test_full_workflow_with_fake_llm(tmp_path, monkeypatch):
     assert memory.list_runs()[0]["goal"] == "Research X"
     assert memory.list_runs()[0]["mode"] == "market"
     assert "-market-" in Path(state["report_path"]).name
-    assert "mode=📊 Market Research" in state["trace"][0]
+    assert "mode=Market Research" in state["trace"][0]
 
 
 def test_writer_sees_which_source_backs_each_fact(tmp_path, monkeypatch):

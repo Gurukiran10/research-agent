@@ -1,7 +1,10 @@
-"""Streamlit UI: shows the agent thinking step by step, then the report.
+"""Streamlit UI: shows the agent working step by step, then the report.
 
     streamlit run app.py
 """
+import html
+import re
+
 import streamlit as st
 
 from agent import memory
@@ -10,89 +13,185 @@ from agent.graph import run
 from agent.modes import MODES, get_mode
 from agent.nodes import learn_from_feedback
 
-st.set_page_config(page_title="Research Agent", page_icon="🔎", layout="wide")
+st.set_page_config(page_title="Research Agent", page_icon=":material/travel_explore:", layout="centered")
 
-NODE_LABELS = {
-    "recall": "🧠 Recall memory",
-    "plan": "🗺️ Plan",
-    "act": "🤔 Reason / Act",
-    "tools": "🛠️ Tool result",
-    "record": "📌 Record finding",
-    "reflect": "🔍 Reflect",
-    "write": "✍️ Write report",
-    "remember": "💾 Remember",
+# (tag text, tag colour) for each graph node in the live timeline
+STEP_TAGS = {
+    "recall": ("MEMORY", "#6B7280"),
+    "plan": ("PLAN", "#13203A"),
+    "act": ("THINK", "#2F5DA8"),
+    "tools": ("TOOL", "#B45309"),
+    "record": ("FOUND", "#2F7D5B"),
+    "reflect": ("CRITIC", "#7A3E9D"),
+    "write": ("WRITE", "#13203A"),
+    "remember": ("SAVED", "#6B7280"),
+}
+TRACE_PREFIX = {  # trace lines start with these words; map them back to nodes
+    "RECALL": "recall", "PLAN": "plan", "ACT": "act", "OBSERVE": "tools",
+    "RECORD": "record", "REFLECT": "reflect", "WRITE": "write", "REMEMBER": "remember",
 }
 
-with st.sidebar:
-    st.header("Long-term memory")
-    st.caption(f"Model: `{GROQ_MODEL}` (Groq)")
-    lessons = memory.get_lessons()
-    st.subheader("Lessons learned from feedback")
-    if lessons:
-        for l in lessons:
-            st.markdown(f"- {l}")
-    else:
-        st.caption("None yet - rate a report to teach the agent.")
-    st.subheader("Past research")
-    for r in memory.list_runs(10):
-        icon = {1: "👍", -1: "👎"}.get(r["rating"], "•")
-        st.markdown(f"{icon} {get_mode(r.get('mode')).label.split()[0]} {r['goal']}")
-
-st.title("🔎 Autonomous Research Agent")
-st.write("Give it a research goal. It **plans** sub-questions, **acts** with tools "
-         "(web search, page reader, calculator, memory), **observes** results, "
-         "**reflects** on gaps, and **writes** a cited report - and it learns from your feedback.")
-
-mode_key = st.radio(
-    "Research mode", list(MODES), format_func=lambda k: MODES[k].label, horizontal=True, key="mode",
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], button, input, textarea, p, li {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+}
+#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden; }
+[data-testid="stHeader"] { background: transparent; }
+.block-container { max-width: 920px; padding-top: 3.5rem; padding-bottom: 4rem; }
+h1 { font-weight: 600 !important; letter-spacing: -0.02em; }
+.eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: .14em;
+  text-transform: uppercase; color: #A5561A; margin-bottom: .25rem; }
+.lede { color: #4A5568; font-size: 1.05rem; line-height: 1.55; margin-bottom: 1.5rem; }
+.mode-desc { font-size: 14.5px; color: #4A5568; margin: -.25rem 0 .15rem; }
+.sections { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280; margin: 0 0 1rem; }
+.model { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #1B2433; }
+.step { display: flex; gap: 14px; align-items: flex-start; padding: 7px 0;
+  border-bottom: 1px solid #ECE8DE; font-size: 14px; line-height: 1.5; color: #1B2433; }
+.step:last-child { border-bottom: none; }
+.tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #fff;
+  padding: 2px 0; border-radius: 4px; min-width: 64px; text-align: center; margin-top: 2px; }
+.step code { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; background: #EDEAE1;
+  padding: 1px 5px; border-radius: 3px; }
+.side-h { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: #6B7280; margin: 1.25rem 0 .5rem; }
+.lesson { font-size: 13.5px; line-height: 1.45; padding: 8px 10px; background: #FFFFFF;
+  border: 1px solid #E4DFD2; border-radius: 6px; margin-bottom: 6px; color: #1B2433; }
+.hist { font-size: 13.5px; line-height: 1.4; padding: 7px 0; border-bottom: 1px solid #E4DFD2; color: #1B2433; }
+.hist .meta { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; margin-top: 2px; }
+.muted { color: #6B7280; font-size: 13.5px; }
+[data-testid="stHeaderActionElements"] { display: none; }
+[data-testid="stTabPanel"] h1 { font-size: 1.75rem !important; line-height: 1.25; }
+[data-testid="stTabPanel"] h2 { font-size: 1.3rem !important; margin-top: 1.25rem; }
+[data-testid="stTabPanel"] table { font-size: 14px; }
+</style>
+""",
+    unsafe_allow_html=True,
 )
+
+
+def step_html(node: str, line: str) -> str:
+    """One row of the timeline. Trace text comes from web pages and the LLM,
+    so it is always HTML-escaped before rendering."""
+    tag, colour = STEP_TAGS.get(node, (node.upper(), "#6B7280"))
+    text = line.split(": ", 1)[1] if re.match(r"^[A-Z]+( \[Q\d+\])?: ", line) else line
+    q = re.match(r"^[A-Z]+ \[(Q\d+)\]", line)
+    body = html.escape(text).replace("\n", "<br>")
+    body = re.sub(r"(\w+)\((.*?)\)", r"<code>\1(\2)</code>", body, count=1) if node == "act" else body
+    prefix = f"<b>{q.group(1)}</b> · " if q else ""
+    return f'<div class="step"><span class="tag" style="background:{colour}">{tag}</span><div>{prefix}{body}</div></div>'
+
+
+def node_of(line: str) -> str:
+    return TRACE_PREFIX.get(re.split(r"[ :\[]", line, maxsplit=1)[0], "act")
+
+
+# ---------------- sidebar: long-term memory ----------------
+with st.sidebar:
+    st.markdown('<p class="side-h">Model</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="muted"><span class="model">{html.escape(GROQ_MODEL)}</span> on Groq</p>', unsafe_allow_html=True)
+
+    st.markdown('<p class="side-h">Learned preferences</p>', unsafe_allow_html=True)
+    lessons = memory.get_lessons()
+    if lessons:
+        st.markdown("".join(f'<div class="lesson">{html.escape(l)}</div>' for l in lessons), unsafe_allow_html=True)
+    else:
+        st.markdown('<p class="muted">Nothing yet. Rate a report to teach the agent.</p>', unsafe_allow_html=True)
+
+    st.markdown('<p class="side-h">Research history</p>', unsafe_allow_html=True)
+    runs = memory.list_runs(8)
+    if not runs:
+        st.markdown('<p class="muted">No research yet.</p>', unsafe_allow_html=True)
+    for r in runs:
+        rating = {1: " · rated helpful", -1: " · rated not helpful"}.get(r["rating"], "")
+        st.markdown(
+            f'<div class="hist">{html.escape(r["goal"])}'
+            f'<span class="meta">{html.escape(get_mode(r.get("mode")).label)}{rating}</span></div>',
+            unsafe_allow_html=True,
+        )
+
+# ---------------- main: input ----------------
+st.markdown('<p class="eyebrow">Autonomous research agent</p>', unsafe_allow_html=True)
+st.title("What should I research?")
+st.markdown(
+    '<p class="lede">The agent plans sub-questions, gathers evidence with web search, a page reader and a '
+    "calculator, has a critic check the findings, and writes a cited report. Your feedback becomes "
+    "preferences it follows next time.</p>",
+    unsafe_allow_html=True,
+)
+
+mode_key = st.segmented_control(
+    "Research mode", list(MODES), format_func=lambda k: MODES[k].label,
+    default="general", key="mode", label_visibility="collapsed",
+) or "general"
 mode = MODES[mode_key]
-st.caption(f"{mode.description}  \nReport sections: {' · '.join(mode.sections)}")
+st.markdown(
+    f'<p class="mode-desc">{html.escape(mode.description)}</p>'
+    f'<p class="sections">Report: {html.escape(" · ".join(mode.sections))}</p>',
+    unsafe_allow_html=True,
+)
 
-if st.button(f"Try example: “{mode.example}”"):
+if st.button("Use an example goal", type="tertiary", icon=":material/lightbulb:"):
     st.session_state["goal_input"] = mode.example
-goal = st.text_input("Research goal", placeholder=f"e.g. {mode.example}", key="goal_input")
+goal = st.text_area(
+    "Research goal", placeholder=mode.example, key="goal_input", height=90, label_visibility="collapsed",
+)
 
-if st.button("Run agent", type="primary", disabled=not goal.strip()):
+if st.button("Run research", type="primary", icon=":material/play_arrow:", disabled=not goal.strip()):
     st.session_state.pop("result", None)
-    log = st.container(border=True)
-    log.markdown("#### Agent workflow (live)")
-    with st.spinner("Agent is working..."):
+    with st.status("Researching…", expanded=True) as status:
         def on_step(node, lines):
             for line in lines:
-                log.markdown(f"**{NODE_LABELS.get(node, node)}** - {line}".replace("\n", "  \n"))
+                st.markdown(step_html(node, line), unsafe_allow_html=True)
         try:
-            st.session_state["result"] = run(goal.strip(), mode=mode_key, on_step=on_step)
+            result = run(goal.strip(), mode=mode_key, on_step=on_step)
+            st.session_state["result"] = result
             st.session_state["goal"] = goal.strip()
+            status.update(label=f"Done · {len(result['trace'])} steps", state="complete", expanded=False)
         except Exception as e:
-            st.error(f"Agent failed: {e}")
+            status.update(label="Research failed", state="error", expanded=True)
+            st.error(f"{type(e).__name__}: {e}")
 
+# ---------------- main: results ----------------
 result = st.session_state.get("result")
 if result:
-    tab_report, tab_plan, tab_trace = st.tabs(["📄 Report", "🗺️ Plan & findings", "🧾 Full trace"])
+    trace = result["trace"]
+    sources = {u for f in result["findings"] for u in f["sources"]}
+    st.write("")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Sub-questions", len(result["plan"]))
+    c2.metric("Tool calls", sum(1 for t in trace if t.startswith("OBSERVE")))
+    c3.metric("Verified sources", len(sources))
+    c4.metric("Critic rounds", result.get("reflection_rounds", 0))
+
+    tab_report, tab_findings, tab_trace = st.tabs(["Report", "Findings & sources", "Agent trace"])
     with tab_report:
-        st.markdown(result["report"])
-        st.download_button("Download report (.md)", result["report"], file_name="report.md")
-    with tab_plan:
+        with st.container(border=True):
+            st.markdown(result["report"])
+        st.download_button("Download report (.md)", result["report"], file_name="report.md",
+                           icon=":material/download:")
+    with tab_findings:
         st.markdown(f"**Critic's verdict:** {result.get('critique', '')}")
         for i, f in enumerate(result["findings"], 1):
-            with st.expander(f"Q{i}. {f['question']}"):
+            with st.expander(f"Q{i} · {f['question']}"):
                 st.markdown(f["answer"])
                 if f["sources"]:
-                    st.caption("Sources: " + " | ".join(f["sources"]))
+                    st.caption("Sources: " + " · ".join(f["sources"]))
     with tab_trace:
-        st.code("\n".join(result["trace"]), language="text")
+        st.markdown("".join(step_html(node_of(t), t) for t in trace), unsafe_allow_html=True)
 
     st.divider()
-    st.subheader("Teach the agent")
+    st.markdown('<p class="eyebrow">Teach the agent</p>', unsafe_allow_html=True)
     col1, col2 = st.columns([1, 3])
-    rating = col1.radio("Was this useful?", ["👍 Yes", "👎 No"], horizontal=True)
+    helpful = col1.segmented_control("Was this useful?", ["Helpful", "Not helpful"], default="Helpful")
     feedback = col2.text_input("What should it do differently next time?",
-                               placeholder="e.g. add a comparison table, prefer official docs as sources")
-    if st.button("Submit feedback"):
+                               placeholder="e.g. add a comparison table, prefer official sources")
+    if st.button("Save feedback", icon=":material/school:"):
         learned = learn_from_feedback(result["run_id"], st.session_state["goal"],
-                                      1 if rating.startswith("👍") else -1, feedback)
+                                      -1 if helpful == "Not helpful" else 1, feedback)
         if learned:
-            st.success("Learned: " + " / ".join(learned) + " - this will shape future reports.")
+            st.success("Learned: " + " / ".join(learned) + ". This will shape future reports.")
         else:
             st.info("Feedback saved.")
