@@ -1,0 +1,34 @@
+"""Command-line entry point.
+
+    python cli.py "Compare the top 3 open-source vector databases in 2026"
+"""
+import sys
+
+from agent.graph import run
+from agent.nodes import learn_from_feedback
+
+
+def main():
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
+    goal = " ".join(sys.argv[1:]).strip() or input("Research goal: ").strip()
+    if not goal:
+        sys.exit("Please provide a research goal.")
+
+    def show(node, lines):
+        for line in lines:
+            print(f"\n[{node}] {line}", flush=True)
+
+    state = run(goal, on_step=show)
+    print("\n" + "=" * 70 + "\n" + state["report"] + "\n" + "=" * 70)
+    print(f"Saved to {state['report_path']}")
+
+    rating = input("\nWas this useful? (y/n, Enter to skip): ").strip().lower()
+    if rating in ("y", "n"):
+        feedback = input("Any feedback to improve future reports? ").strip()
+        lessons = learn_from_feedback(state["run_id"], goal, 1 if rating == "y" else -1, feedback)
+        for l in lessons:
+            print(f"Learned: {l}")
+
+
+if __name__ == "__main__":
+    main()
