@@ -51,6 +51,7 @@ organisation-level contact routes and never guesses personal emails or phone num
 | **Final output** | Markdown report with TL;DR, key findings, limitations, numbered sources; saved to `reports/` |
 | **Gets better with use** | SQLite memory stores past runs and **lessons distilled from user feedback**; they are injected into planning, tool use and writing on future runs |
 | **Safety bounds** | Tool budget per step, max reflection rounds, recursion limit, retries on rate limits / malformed tool calls, automatic fallback model |
+| **Research history** | Every run is saved with its plan, findings and trace in SQLite; click any past run in the sidebar to reopen it. Nothing is pre-filled: a fresh install starts with empty memory |
 | **Trustworthy citations** | Only URLs that a tool actually returned can be cited; the Sources list is built in code, not by the LLM |
 
 ## 3. Architecture & workflow

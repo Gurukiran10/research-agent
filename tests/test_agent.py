@@ -27,6 +27,14 @@ def test_memory_roundtrip(tmp_path, monkeypatch):
     assert memory.get_lessons() == ["Include a comparison table."]
     assert memory.find_related_reports("best vector databases")[0]["id"] == run_id
 
+    # full run details round-trip so the UI can reopen a past run
+    detailed = memory.save_run("g2", "R2", "market", {"plan": ["q1"], "trace": ["PLAN: q1"]})
+    assert memory.get_run(detailed)["details"] == {"plan": ["q1"], "trace": ["PLAN: q1"]}
+    assert memory.get_run(run_id)["details"] == {}  # saved without details
+    assert memory.count_runs() == 2 and len(memory.list_runs(None)) == 2
+    memory.clear_all()
+    assert memory.count_runs() == 0 and memory.get_lessons() == []
+
 
 class FakeLLM:
     """Scripted stand-in for ChatGroq that walks the graph through one full
@@ -84,6 +92,8 @@ def test_full_workflow_with_fake_llm(tmp_path, monkeypatch):
     assert any("calculator" in t for t in state["trace"])
     assert memory.list_runs()[0]["goal"] == "Research X"
     assert memory.list_runs()[0]["mode"] == "market"
+    saved = memory.get_run(state["run_id"])["details"]
+    assert saved["plan"] == state["plan"] and len(saved["findings"]) == 3 and saved["trace"]
     assert "-market-" in Path(state["report_path"]).name
     assert "mode=Market Research" in state["trace"][0]
 

@@ -278,7 +278,9 @@ def write(state: ResearchState) -> dict:
 
 def remember(state: ResearchState) -> dict:
     """Persist the run so future research can reuse it."""
-    run_id = memory.save_run(state["goal"], state["report"], state.get("mode", "general"))
+    details = {k: state.get(k) for k in ("plan", "findings", "critique", "reflection_rounds", "report_path")}
+    details["trace"] = _log(state, "REMEMBER: stored in long-term memory")
+    run_id = memory.save_run(state["goal"], state["report"], state.get("mode", "general"), details)
     return {"run_id": run_id, "trace": _log(state, f"REMEMBER: stored as run #{run_id}")}
 
 

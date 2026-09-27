@@ -15,6 +15,8 @@ from agent.nodes import learn_from_feedback
 
 st.set_page_config(page_title="Research Agent", page_icon=":material/travel_explore:", layout="centered")
 
+HISTORY_PREVIEW = 6  # past runs shown in the sidebar before "Show all"
+
 # (tag text, tag colour) for each graph node in the live timeline
 STEP_TAGS = {
     "recall": ("MEMORY", "#6B7280"),
@@ -63,6 +65,15 @@ h1 { font-weight: 600 !important; letter-spacing: -0.02em; }
 .hist { font-size: 13.5px; line-height: 1.4; padding: 7px 0; border-bottom: 1px solid rgba(128,128,128,.2); }
 .hist .meta { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: .6; margin-top: 2px; }
 .muted { opacity: .65; font-size: 13.5px; }
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="tertiary"] { justify-content: flex-start;
+  text-align: left; padding: 0; min-height: 0; font-size: 13.5px; line-height: 1.4; }
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="tertiary"] p { text-align: left; font-size: 13.5px; }
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="tertiary"] > div,
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="tertiary"] [data-testid="stMarkdownContainer"] {
+  justify-content: flex-start; width: 100%; text-align: left; }
+.hist-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: .6;
+  margin: -.6rem 0 .35rem; padding-bottom: .45rem; border-bottom: 1px solid rgba(128,128,128,.2); }
+.opened { font-size: 13.5px; opacity: .75; margin-bottom: .5rem; }
 .wait-note { font-size: 13.5px; opacity: .7; margin: .25rem 0 .5rem; }
 [data-testid="stHeaderActionElements"] { display: none; }
 [data-testid="stTabPanel"] h1 { font-size: 1.75rem !important; line-height: 1.25; }
@@ -86,6 +97,11 @@ def step_html(node: str, line: str) -> str:
     return f'<div class="step"><span class="tag" style="background:{colour}">{tag}</span><div>{prefix}{body}</div></div>'
 
 
+def no_math(text: str) -> str:
+    """Streamlit renders $...$ as LaTeX, which garbles prices like "$560 billion"."""
+    return text.replace("$", r"\$")
+
+
 def node_of(line: str) -> str:
     return TRACE_PREFIX.get(re.split(r"[ :\[]", line, maxsplit=1)[0], "act")
 
@@ -102,17 +118,36 @@ with st.sidebar:
     else:
         st.markdown('<p class="muted">Nothing yet. Rate a report to teach the agent.</p>', unsafe_allow_html=True)
 
-    st.markdown('<p class="side-h">Research history</p>', unsafe_allow_html=True)
-    runs = memory.list_runs(8)
+    total_runs = memory.count_runs()
+    st.markdown(f'<p class="side-h">Research history · {total_runs}</p>', unsafe_allow_html=True)
+    show_all = st.session_state.get("show_all_history", False)
+    runs = memory.list_runs(None if show_all else HISTORY_PREVIEW)
     if not runs:
-        st.markdown('<p class="muted">No research yet.</p>', unsafe_allow_html=True)
+        st.markdown('<p class="muted">No research yet. Runs you make are saved here.</p>', unsafe_allow_html=True)
     for r in runs:
+        # each past run is clickable and reopens its saved result
+        if st.button(r["goal"], key=f"hist-{r['id']}", type="tertiary", use_container_width=True):
+            st.session_state["open_run_id"] = r["id"]
         rating = {1: " · rated helpful", -1: " · rated not helpful"}.get(r["rating"], "")
         st.markdown(
-            f'<div class="hist">{html.escape(r["goal"])}'
-            f'<span class="meta">{html.escape(get_mode(r.get("mode")).label)}{rating}</span></div>',
+            f'<div class="hist-meta">{html.escape(get_mode(r.get("mode")).label)} · '
+            f'{html.escape(r["created_at"][:16].replace("T", " "))}{rating}</div>',
             unsafe_allow_html=True,
         )
+    if total_runs > HISTORY_PREVIEW:
+        label = "Show fewer" if show_all else f"Show all {total_runs}"
+        if st.button(label, key="toggle-history", type="tertiary"):
+            st.session_state["show_all_history"] = not show_all
+            st.rerun()
+
+    if total_runs or lessons:
+        with st.expander("Manage memory"):
+            st.caption("Deletes all saved research and learned preferences on this computer.")
+            confirm = st.checkbox("Yes, clear everything")
+            if st.button("Clear memory", disabled=not confirm, icon=":material/delete:"):
+                memory.clear_all()
+                st.session_state.pop("result", None)
+                st.rerun()
 
 # ---------------- main: input ----------------
 st.markdown('<p class="eyebrow">Autonomous research agent</p>', unsafe_allow_html=True)
@@ -175,28 +210,45 @@ if st.button("Run research", type="primary", icon=":material/play_arrow:", disab
             st.error(f"{type(e).__name__}: {e}")
 
 # ---------------- main: results ----------------
+open_id = st.session_state.pop("open_run_id", None)
+if open_id and (saved := memory.get_run(open_id)):
+    d = saved["details"]
+    st.session_state["result"] = {
+        "run_id": saved["id"], "report": saved["report"], "plan": d.get("plan") or [],
+        "findings": d.get("findings") or [], "trace": d.get("trace") or [],
+        "critique": d.get("critique", ""), "reflection_rounds": d.get("reflection_rounds", 0),
+        "opened_from_history": f'{get_mode(saved.get("mode")).label} · {saved["created_at"][:16].replace("T", " ")}',
+    }
+    st.session_state["goal"] = saved["goal"]
+
 result = st.session_state.get("result")
 if result:
+    if result.get("opened_from_history"):
+        st.markdown(f'<p class="eyebrow">From history</p><h3 style="margin-top:0">{html.escape(st.session_state["goal"])}</h3>'
+                    f'<p class="opened">{html.escape(result["opened_from_history"])}</p>', unsafe_allow_html=True)
     trace = result["trace"]
     sources = {u for f in result["findings"] for u in f["sources"]}
     st.write("")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Sub-questions", len(result["plan"]))
-    c2.metric("Tool calls", sum(1 for t in trace if t.startswith("OBSERVE")))
-    c3.metric("Verified sources", len(sources))
-    c4.metric("Critic rounds", result.get("reflection_rounds", 0))
+    if trace:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Sub-questions", len(result["plan"]))
+        c2.metric("Tool calls", sum(1 for t in trace if t.startswith("OBSERVE")))
+        c3.metric("Verified sources", len(sources))
+        c4.metric("Critic rounds", result.get("reflection_rounds", 0))
+    else:
+        st.caption("This run was saved by an earlier version, so only its report is available.")
 
     tab_report, tab_findings, tab_trace = st.tabs(["Report", "Findings & sources", "Agent trace"])
     with tab_report:
         with st.container(border=True):
-            st.markdown(result["report"])
+            st.markdown(no_math(result["report"]))
         st.download_button("Download report (.md)", result["report"], file_name="report.md",
                            icon=":material/download:")
     with tab_findings:
-        st.markdown(f"**Critic's verdict:** {result.get('critique', '')}")
+        st.markdown(f"**Critic's verdict:** {no_math(result.get('critique', ''))}")
         for i, f in enumerate(result["findings"], 1):
             with st.expander(f"Q{i} · {f['question']}"):
-                st.markdown(f["answer"])
+                st.markdown(no_math(f["answer"]))
                 if f["sources"]:
                     st.caption("Sources: " + " · ".join(f["sources"]))
     with tab_trace:
