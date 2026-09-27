@@ -48,7 +48,7 @@ organisation-level contact routes and never guesses personal emails or phone num
 | **State / context** | One typed `ResearchState` flows through every node: plan, step index, scratchpad, findings, critique, trace |
 | **Conditional workflow** | Routers decide: call tool vs answer, next sub-question vs reflect, research more vs write |
 | **Self-reflection** | `reflect` node critiques the findings and adds follow-up questions if there are gaps |
-| **Final output** | Markdown report with TL;DR, key findings, limitations, numbered sources; saved to `reports/` |
+| **Final output** | Markdown report with TL;DR, key findings, limitations, numbered sources; saved to `data/reports/` |
 | **Gets better with use** | SQLite memory stores past runs and **lessons distilled from user feedback**; they are injected into planning, tool use and writing on future runs |
 | **Safety bounds** | Tool budget per step, max reflection rounds, recursion limit, retries on rate limits / malformed tool calls, automatic fallback model |
 | **Research history** | Every run is saved with its plan, findings and trace in SQLite; click any past run in the sidebar to reopen it. Nothing is pre-filled: a fresh install starts with empty memory |
@@ -92,7 +92,8 @@ research-agent/
 ├── cli.py           # terminal interface
 ├── api.py           # FastAPI: POST /research, POST /feedback, GET /memory
 ├── tests/           # offline tests (fake LLM drives the full graph)
-└── reports/         # generated reports
+├── docs/sample-reports/  # example reports from real runs
+└── data/            # local memory DB + generated reports (git-ignored)
 ```
 
 **Design decisions**
@@ -164,7 +165,7 @@ REFLECT: gaps found - "findings lack a clear, sourced CAGR for 2025-2030; Q2 adm
 ACT [Q4]:  web_search('MarketsandMarkets AI agents market 2025 2030 CAGR 46.3') ...
 ACT [Q5]:  ...
 REFLECT: findings sufficient
-WRITE:   report saved to reports/...-how-big-is-the-global-ai-agents-market-....md
+WRITE:   report saved to data/reports/...-how-big-is-the-global-ai-agents-market-....md
 REMEMBER: stored as run #3
 ```
 
@@ -187,7 +188,7 @@ one-shot prompt.
 >
 > *…Limitations… Sources: 9 verified URLs*
 
-Full reports from real runs are in [`reports/`](reports/).
+Example reports from real runs are in [`docs/sample-reports/`](docs/sample-reports/).
 
 **Feedback → learning:**
 
@@ -204,7 +205,8 @@ on every later run.
 ## 6. LLM & API disclosure
 
 - **LLM:** `openai/gpt-oss-120b` via **Groq free tier** (open-weights model, Apache 2.0), with
-  automatic fallback to `openai/gpt-oss-20b` when the free daily token quota runs out.
+  automatic fallback to `openai/gpt-oss-20b` and then `qwen/qwen3.8-27b` when a free-tier quota runs out. If every model is
+  exhausted at the final step, the report is assembled from the verified findings instead of failing.
   No paid APIs are used.
 - **Search:** DuckDuckGo via the `ddgs` package (free, no key).
 - **AI assistance:** an AI coding assistant was used for coding help, as the

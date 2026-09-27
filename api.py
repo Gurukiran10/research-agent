@@ -6,11 +6,11 @@
 """
 from typing import Literal
 
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field, field_validator
 
 from agent import memory
-from agent.graph import run
+from agent.graph import MAX_GOAL_CHARS, run
 from agent.modes import MODES
 from agent.nodes import learn_from_feedback
 
@@ -18,20 +18,30 @@ app = FastAPI(title="Research Agent API")
 
 
 class ResearchRequest(BaseModel):
-    goal: str
+    goal: str = Field(min_length=1, max_length=MAX_GOAL_CHARS)
     mode: Literal["general", "competitor", "market", "leads"] = "general"
+
+    @field_validator("goal")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("goal must not be blank")
+        return v.strip()
 
 
 class FeedbackRequest(BaseModel):
     run_id: int
     goal: str
-    rating: int  # 1 = helpful, -1 = not helpful
-    feedback: str = ""
+    rating: Literal[1, -1]  # 1 = helpful, -1 = not helpful
+    feedback: str = Field(default="", max_length=1000)
 
 
 @app.post("/research")
 def research(req: ResearchRequest):
-    state = run(req.goal, mode=req.mode)
+    try:
+        state = run(req.goal, mode=req.mode)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {
         "run_id": state["run_id"],
         "plan": state["plan"],
@@ -43,6 +53,8 @@ def research(req: ResearchRequest):
 
 @app.post("/feedback")
 def feedback(req: FeedbackRequest):
+    if memory.get_run(req.run_id) is None:
+        raise HTTPException(status_code=404, detail=f"No research run with id {req.run_id}.")
     return {"lessons_learned": learn_from_feedback(req.run_id, req.goal, req.rating, req.feedback)}
 
 
@@ -54,3 +66,11 @@ def get_modes():
 @app.get("/memory")
 def get_memory():
     return {"lessons": memory.get_lessons(), "runs": memory.list_runs()}
+
+
+@app.get("/runs/{run_id}")
+def get_run(run_id: int):
+    saved = memory.get_run(run_id)
+    if saved is None:
+        raise HTTPException(status_code=404, detail=f"No research run with id {run_id}.")
+    return saved

@@ -8,14 +8,20 @@ load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
-REPORTS_DIR = ROOT / "reports"
-DATA_DIR.mkdir(exist_ok=True)
-REPORTS_DIR.mkdir(exist_ok=True)
+REPORTS_DIR = DATA_DIR / "reports"  # runtime output; git-ignored along with data/
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-# Used automatically when the primary model hits its free-tier daily quota.
-GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b")
+# Tried in order when the primary model is rate-limited or fails. Each Groq
+# model has its own free-tier quota, so a chain keeps runs alive much longer.
+GROQ_FALLBACK_MODELS = [
+    m.strip()
+    for m in os.getenv(
+        "GROQ_FALLBACK_MODELS", os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b,qwen/qwen3.8-27b")
+    ).split(",")
+    if m.strip()
+]
 # gpt-oss models "think" before answering; low effort keeps runs fast.
 REASONING_EFFORT = os.getenv("REASONING_EFFORT", "low")
 

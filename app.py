@@ -9,7 +9,7 @@ import streamlit as st
 
 from agent import memory
 from agent.config import GROQ_MODEL
-from agent.graph import run
+from agent.graph import MAX_GOAL_CHARS, run
 from agent.modes import MODES, get_mode
 from agent.nodes import learn_from_feedback
 
@@ -174,6 +174,7 @@ if st.button("Use an example goal", type="tertiary", icon=":material/lightbulb:"
     st.session_state["goal_input"] = mode.example
 goal = st.text_area(
     "Research goal", placeholder=mode.example, key="goal_input", height=90, label_visibility="collapsed",
+    max_chars=MAX_GOAL_CHARS,
 )
 
 if st.button("Run research", type="primary", icon=":material/play_arrow:", disabled=not goal.strip()):
@@ -205,9 +206,13 @@ if st.button("Run research", type="primary", icon=":material/play_arrow:", disab
             st.session_state["result"] = result
             st.session_state["goal"] = goal.strip()
             status.update(label=f"Done · {len(result['trace'])} steps", state="complete", expanded=False)
+        except ValueError as e:  # invalid input, e.g. a blank goal
+            status.update(label="Check your input", state="error", expanded=False)
+            st.warning(str(e))
         except Exception as e:
             status.update(label="Research failed", state="error", expanded=True)
-            st.error(f"{type(e).__name__}: {e}")
+            st.error(f"The research run failed: {e}. If this mentions a rate limit, the free Groq quota is "
+                     "used up for now; wait a few minutes and try again.")
 
 # ---------------- main: results ----------------
 open_id = st.session_state.pop("open_run_id", None)
@@ -245,14 +250,28 @@ if result:
         st.download_button("Download report (.md)", result["report"], file_name="report.md",
                            icon=":material/download:")
     with tab_findings:
-        st.markdown(f"**Critic's verdict:** {no_math(result.get('critique', ''))}")
-        for i, f in enumerate(result["findings"], 1):
-            with st.expander(f"Q{i} · {f['question']}"):
-                st.markdown(no_math(f["answer"]))
-                if f["sources"]:
-                    st.caption("Sources: " + " · ".join(f["sources"]))
+        if result.get("critique"):
+            st.markdown(f"**Critic's verdict:** {no_math(result['critique'])}")
+        if result["findings"]:
+            for i, f in enumerate(result["findings"], 1):
+                with st.expander(f"Q{i} · {f['question']}"):
+                    st.markdown(no_math(f["answer"]))
+                    if f["sources"]:
+                        st.caption("Sources: " + " · ".join(f["sources"]))
+        else:
+            # runs saved before full details were stored: fall back to the report's own source list
+            report_sources = re.findall(r"^\d+\. (https?://\S+)", result["report"], flags=re.M)
+            st.info("Per-question findings weren't stored for this older run. "
+                    "New runs save them, so they show up here.", icon=":material/info:")
+            if report_sources:
+                st.markdown("**Sources used in this report**")
+                st.markdown("\n".join(f"{i}. {u}" for i, u in enumerate(report_sources, 1)))
     with tab_trace:
-        st.markdown("".join(step_html(node_of(t), t) for t in trace), unsafe_allow_html=True)
+        if trace:
+            st.markdown("".join(step_html(node_of(t), t) for t in trace), unsafe_allow_html=True)
+        else:
+            st.info("The step-by-step trace wasn't stored for this older run. "
+                    "New runs save it, so you can replay every decision here.", icon=":material/info:")
 
     st.divider()
     st.markdown('<p class="eyebrow">Teach the agent</p>', unsafe_allow_html=True)
@@ -261,6 +280,9 @@ if result:
     feedback = col2.text_input("What should it do differently next time?",
                                placeholder="e.g. add a comparison table, prefer official sources")
     if st.button("Save feedback", icon=":material/school:"):
+        if helpful is None:  # the user clicked the selected option again, clearing it
+            st.warning("Choose Helpful or Not helpful first.")
+            st.stop()
         learned = learn_from_feedback(result["run_id"], st.session_state["goal"],
                                       -1 if helpful == "Not helpful" else 1, feedback)
         if learned:

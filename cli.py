@@ -26,7 +26,10 @@ def main():
         for line in lines:
             print(f"\n[{node}] {line}", flush=True)
 
-    state = run(goal, mode=args.mode, on_step=show)
+    try:
+        state = run(goal, mode=args.mode, on_step=show)
+    except ValueError as e:  # invalid input such as an over-long goal
+        sys.exit(str(e))
     print("\n" + "=" * 70 + "\n" + state["report"] + "\n" + "=" * 70)
     print(f"Saved to {state['report_path']}")
 

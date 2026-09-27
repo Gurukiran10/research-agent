@@ -4,7 +4,7 @@ Flow:  recall -> plan -> act <-> tools -> record -> (next step | reflect)
        reflect -> (more research | write) -> write -> remember
 """
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, Field
@@ -13,7 +13,7 @@ from . import memory, prompts
 from .config import (
     MAX_REFLECTION_ROUNDS, MAX_SUBQUESTIONS, MAX_TOOL_CALLS_PER_STEP, REPORTS_DIR,
 )
-from .llm import get_llm
+from .llm import get_llm, invoke_with_patience
 from .modes import get_mode
 from .state import ResearchState
 from .tools import TOOLS, TOOLS_BY_NAME
@@ -50,12 +50,10 @@ def _structured(schema, prompt: str, temperature: float, default):
     once, and falls back to a safe default so a malformed reply never crashes
     the workflow."""
     llm = get_llm(temperature).with_structured_output(schema, method="json_schema")
-    for _ in range(2):
-        try:
-            return llm.invoke(prompt)
-        except Exception:
-            continue
-    return default
+    try:
+        return invoke_with_patience(lambda: llm.invoke(prompt))
+    except Exception:
+        return default
 
 
 def _norm(url: str) -> str:
@@ -88,6 +86,7 @@ def plan(state: ResearchState) -> dict:
     mode = get_mode(state.get("mode"))
     result = _structured(Plan, prompts.PLANNER.format(
         goal=state["goal"],
+        today=date.today().isoformat(),
         mode_label=mode.label,
         mode_planning=mode.planning,
         max_q=MAX_SUBQUESTIONS,
@@ -115,6 +114,7 @@ def act(state: ResearchState) -> dict:
         previous = "\n".join(f"- {f['question']}: {f['answer'][:400]}" for f in state.get("findings", []))
         messages = [
             SystemMessage(prompts.EXECUTOR.format(
+                today=date.today().isoformat(),
                 mode_label=get_mode(state.get("mode")).label,
                 mode_execution=get_mode(state.get("mode")).execution,
                 goal=state["goal"], step=idx + 1, total=len(state["plan"]), question=question,
@@ -126,7 +126,7 @@ def act(state: ResearchState) -> dict:
 
     budget_left = state.get("tool_calls_this_step", 0) < MAX_TOOL_CALLS_PER_STEP
     if budget_left:
-        response = _invoke_with_tools(messages)
+        response = _invoke_with_tools(messages, state["goal"], question)
     else:
         response = _answer_without_tools(state["goal"], question, messages)
 
@@ -138,7 +138,7 @@ def act(state: ResearchState) -> dict:
     return {"messages": messages + [response], "trace": _log(state, note)}
 
 
-def _invoke_with_tools(messages):
+def _invoke_with_tools(messages, goal: str, question: str):
     """Tool-calling models occasionally emit malformed calls or invent tools
     that don't exist; retry once, then fall back to answering from the
     evidence so a single bad generation can't kill the run."""
@@ -150,8 +150,7 @@ def _invoke_with_tools(messages):
             continue
         if all(c["name"] in TOOLS_BY_NAME for c in response.tool_calls):
             return response
-    question = messages[1].content if len(messages) > 1 else ""
-    return _answer_without_tools("", question, messages)
+    return _answer_without_tools(goal, question, messages)
 
 
 def _answer_without_tools(goal: str, question: str, messages) -> AIMessage:
@@ -222,7 +221,7 @@ def reflect(state: ResearchState) -> dict:
     """Critique the findings; add follow-up questions if there are gaps."""
     result = _structured(
         Critique, prompts.REFLECTOR.format(
-            goal=state["goal"], findings=_findings_text(state),
+            goal=state["goal"], findings=_findings_text(state), today=date.today().isoformat(),
             mode_label=get_mode(state.get("mode")).label,
             mode_sections=", ".join(get_mode(state.get("mode")).sections),
         ), 0.0,
@@ -259,21 +258,43 @@ def write(state: ResearchState) -> dict:
         for i, f in enumerate(state.get("findings", []), 1)
     )
     mode = get_mode(state.get("mode"))
-    report = get_llm(0.3).invoke(prompts.WRITER.format(
+    note = "report saved"
+    prompt = prompts.WRITER.format(
         goal=state["goal"],
+        today=date.today().isoformat(),
         mode_label=mode.label,
         mode_report=mode.report,
         findings=findings,
         critique=state.get("critique", ""),
         lessons=_bullets(state.get("lessons", [])),
-    )).content
+    )
+    try:
+        report = invoke_with_patience(lambda: get_llm(0.3).invoke(prompt)).content
+    except Exception as e:
+        # Every model is rate-limited: never lose a finished research run -
+        # deliver the verified findings as the report instead.
+        report = _report_from_findings(state, cite_inline, e)
+        note = "writing model unavailable, report assembled from verified findings and saved"
     report = re.sub(r"【(\d+)[^】]*】", r"[\1]", report)  # normalise odd citation styles
     report = re.split(r"\n#+\s*Sources\b", report)[0].rstrip()  # drop any LLM-written source list
     report += "\n\n## Sources\n" + ("\n".join(f"{i}. {u}" for u, i in num.items()) or "_No sources._")
     slug = re.sub(r"[^a-z0-9]+", "-", state["goal"].lower()).strip("-")[:50] or "report"
     path = REPORTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{mode.key}-{slug}.md"
     path.write_text(report, encoding="utf-8")
-    return {"report": report, "report_path": str(path), "trace": _log(state, f"WRITE: report saved to {path.name}")}
+    return {"report": report, "report_path": str(path), "trace": _log(state, f"WRITE: {note} to {path.name}")}
+
+
+def _report_from_findings(state: ResearchState, cite_inline, error: Exception) -> str:
+    parts = [
+        f"# Research notes: {state['goal']}",
+        f"> The writing model was unavailable ({type(error).__name__}, usually a free-tier rate limit), "
+        "so these are the agent's verified findings, unedited. Run again later for a polished report.",
+    ]
+    for i, f in enumerate(state.get("findings", []), 1):
+        parts.append(f"## Q{i}. {f['question']}\n\n{URL_RE.sub(cite_inline, f['answer'])}")
+    if state.get("critique"):
+        parts.append(f"## Limitations\n\n{state['critique']}")
+    return "\n\n".join(parts)
 
 
 def remember(state: ResearchState) -> dict:

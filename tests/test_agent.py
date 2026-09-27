@@ -120,6 +120,54 @@ def test_writer_sees_which_source_backs_each_fact(tmp_path, monkeypatch):
     assert out["report"].endswith("1. https://a.com/x\n2. https://b.com/y")
 
 
+def test_writer_survives_all_models_rate_limited(tmp_path, monkeypatch):
+    """If every model is out of quota at the last step, the run must still
+    deliver its verified findings instead of crashing."""
+    from agent import llm
+
+    monkeypatch.setattr(llm, "PATIENCE_S", 0)
+
+    class RateLimited:
+        def invoke(self, prompt):
+            raise RuntimeError("429 rate limit")
+
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: RateLimited())
+    monkeypatch.setattr(nodes, "REPORTS_DIR", tmp_path)
+    finding = {"question": "What is X?", "answer": "X is Y (source: https://a.com/x).", "sources": ["https://a.com/x"]}
+    out = nodes.write({"goal": "g", "findings": [finding], "critique": "thin evidence", "trace": []})
+    assert "## Q1. What is X?" in out["report"] and "X is Y (source: [1])" in out["report"]
+    assert "## Limitations" in out["report"] and out["report"].endswith("1. https://a.com/x")
+    assert "report assembled from verified findings" in out["trace"][-1]
+
+
+def test_fallback_chain_has_three_distinct_models():
+    from agent import llm
+
+    names = [name for name, _ in llm.LLM(0.2).models]
+    assert len(names) == len(set(names)) >= 3
+
+
+def test_daily_limit_skips_model_but_chain_still_answers(monkeypatch):
+    from agent import llm
+
+    class Model:
+        def __init__(self, error=None):
+            self.error, self.calls = error, 0
+
+        def invoke(self, prompt):
+            self.calls += 1
+            if self.error:
+                raise RuntimeError(self.error)
+            return "ok"
+
+    monkeypatch.setattr(llm, "_exhausted_until", {})
+    spent = Model("Error code: 429 - Rate limit reached ... tokens per day (TPD): Limit 200000")
+    backup = Model()
+    chain = llm._Chain([("big", spent), ("backup", backup)])
+    assert chain.invoke("q") == "ok" and chain.invoke("q") == "ok"
+    assert spent.calls == 1 and backup.calls == 2  # exhausted model not retried on the 2nd call
+
+
 def test_entry_points_compile():
     import py_compile
 
@@ -136,13 +184,13 @@ def test_every_mode_fills_every_prompt():
 
     for mode in MODES.values():
         assert mode.sections and mode.sections[-1] == "Limitations", mode.key
-        prompts.PLANNER.format(goal="g", max_q=3, lessons="-", related="-",
+        prompts.PLANNER.format(goal="g", max_q=3, today="2026-09-27", lessons="-", related="-",
                                mode_label=mode.label, mode_planning=mode.planning)
-        prompts.EXECUTOR.format(goal="g", step=1, total=3, question="q", previous="-", budget=3,
+        prompts.EXECUTOR.format(goal="g", today="2026-09-27", step=1, total=3, question="q", previous="-", budget=3,
                                 lessons="-", mode_label=mode.label, mode_execution=mode.execution)
-        prompts.REFLECTOR.format(goal="g", findings="-", mode_label=mode.label,
+        prompts.REFLECTOR.format(goal="g", findings="-", today="2026-09-27", mode_label=mode.label,
                                  mode_sections=", ".join(mode.sections))
-        prompts.WRITER.format(goal="g", findings="-", critique="-", lessons="-",
+        prompts.WRITER.format(goal="g", findings="-", today="2026-09-27", critique="-", lessons="-",
                               mode_label=mode.label, mode_report=mode.report)
 
 

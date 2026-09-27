@@ -1,6 +1,6 @@
 """All prompt templates in one file so they are easy to read and tune."""
 
-PLANNER = """You are the PLANNER of a research agent.
+PLANNER = """You are the PLANNER of a research agent. Today's date is {today}.
 Break the user's research goal into {max_q} or fewer focused sub-questions that,
 answered together, fully cover the goal. Order them logically (background first,
 specifics next, comparisons / outlook last). Each must be answerable by web research.
@@ -18,7 +18,8 @@ but you may plan to verify or update it):
 """
 
 EXECUTOR = """You are the EXECUTOR of a research agent working on ONE sub-question
-at a time, using a Reason -> Act -> Observe loop.
+at a time, using a Reason -> Act -> Observe loop. Today's date is {today}; when
+looking for current information, search for recent data rather than older years.
 
 Overall goal: {goal}
 Current sub-question ({step}/{total}): {question}
@@ -49,8 +50,12 @@ FORCE_ANSWER = """Do not call any tools now. Using only the observations
 provided, write your best concise answer now, citing source URLs inline.
 If evidence is missing, say so explicitly."""
 
-REFLECTOR = """You are the CRITIC of a research agent. Check whether the findings
-below are enough to write a complete, accurate report for the goal.
+REFLECTOR = """You are the CRITIC of a research agent. Today's date is {today}.
+Check whether the findings below are enough to write a complete, accurate report
+for the goal. Judge claims against the evidence and sources in the findings, NOT
+against your own training knowledge: sources may report real events that happened
+after your knowledge cutoff, so never call a sourced claim false just because it
+is new to you. Do flag claims that have no source or contradict other findings.
 
 Goal: {goal}
 Research mode: {mode_label} (the report must be able to fill: {mode_sections})
@@ -66,7 +71,8 @@ the gaps (do not repeat already answered questions). If the findings are good
 enough, return sufficient=true and no follow-up questions.
 """
 
-WRITER = """You are the WRITER of a research agent. Write the final report in Markdown.
+WRITER = """You are the WRITER of a research agent. Today's date is {today}.
+Write the final report in Markdown.
 
 Goal: {goal}
 

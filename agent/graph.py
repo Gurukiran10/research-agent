@@ -2,6 +2,7 @@
 from langgraph.graph import END, START, StateGraph
 
 from . import nodes
+from .modes import MODES
 from .state import ResearchState
 
 
@@ -31,9 +32,26 @@ def build_graph():
 graph = build_graph()
 
 
+MAX_GOAL_CHARS = 500
+
+
+def validate_goal(goal: str) -> str:
+    """Shared input check for the UI, CLI and API: a blank or huge goal would
+    waste the free-tier token quota on a run that can't be useful."""
+    goal = (goal or "").strip()
+    if not goal:
+        raise ValueError("Please enter a research goal.")
+    if len(goal) > MAX_GOAL_CHARS:
+        raise ValueError(f"The research goal is too long ({len(goal)} characters, max {MAX_GOAL_CHARS}).")
+    return goal
+
+
 def run(goal: str, mode: str = "general", on_step=None) -> dict:
     """Run the agent end-to-end. `on_step(node_name, new_trace_lines)` is
     called after every node so UIs can show live progress."""
+    goal = validate_goal(goal)
+    if mode not in MODES:
+        raise ValueError(f"Unknown research mode {mode!r}. Choose one of: {', '.join(MODES)}.")
     state: dict = {"goal": goal, "mode": mode, "trace": []}
     # recursion_limit bounds total node executions as a final safety net.
     for chunk in graph.stream(state, stream_mode="updates", config={"recursion_limit": 100}):
