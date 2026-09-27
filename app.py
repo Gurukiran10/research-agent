@@ -38,30 +38,32 @@ st.markdown(
 html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], button, input, textarea, p, li {
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
 }
-#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden; }
+footer, [data-testid="stDecoration"] { visibility: hidden; }
 [data-testid="stHeader"] { background: transparent; }
 .block-container { max-width: 920px; padding-top: 3.5rem; padding-bottom: 4rem; }
 h1 { font-weight: 600 !important; letter-spacing: -0.02em; }
+/* colours inherit the active theme text colour so light and dark modes both work */
 .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: .14em;
-  text-transform: uppercase; color: #A5561A; margin-bottom: .25rem; }
-.lede { color: #4A5568; font-size: 1.05rem; line-height: 1.55; margin-bottom: 1.5rem; }
-.mode-desc { font-size: 14.5px; color: #4A5568; margin: -.25rem 0 .15rem; }
-.sections { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B7280; margin: 0 0 1rem; }
-.model { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #1B2433; }
+  text-transform: uppercase; color: #C26A2A; margin-bottom: .25rem; }
+.lede { opacity: .78; font-size: 1.05rem; line-height: 1.55; margin-bottom: 1.5rem; }
+.mode-desc { font-size: 14.5px; opacity: .78; margin: -.25rem 0 .15rem; }
+.sections { font-family: 'JetBrains Mono', monospace; font-size: 12px; opacity: .6; margin: 0 0 1rem; }
+.model { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
 .step { display: flex; gap: 14px; align-items: flex-start; padding: 7px 0;
-  border-bottom: 1px solid #ECE8DE; font-size: 14px; line-height: 1.5; color: #1B2433; }
+  border-bottom: 1px solid rgba(128,128,128,.18); font-size: 14px; line-height: 1.5; }
 .step:last-child { border-bottom: none; }
 .tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; color: #fff;
   padding: 2px 0; border-radius: 4px; min-width: 64px; text-align: center; margin-top: 2px; }
-.step code { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; background: #EDEAE1;
-  padding: 1px 5px; border-radius: 3px; }
+.step code { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; background: rgba(128,128,128,.14);
+  color: inherit; padding: 1px 5px; border-radius: 3px; }
 .side-h { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .12em;
-  text-transform: uppercase; color: #6B7280; margin: 1.25rem 0 .5rem; }
-.lesson { font-size: 13.5px; line-height: 1.45; padding: 8px 10px; background: #FFFFFF;
-  border: 1px solid #E4DFD2; border-radius: 6px; margin-bottom: 6px; color: #1B2433; }
-.hist { font-size: 13.5px; line-height: 1.4; padding: 7px 0; border-bottom: 1px solid #E4DFD2; color: #1B2433; }
-.hist .meta { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; margin-top: 2px; }
-.muted { color: #6B7280; font-size: 13.5px; }
+  text-transform: uppercase; opacity: .6; margin: 1.25rem 0 .5rem; }
+.lesson { font-size: 13.5px; line-height: 1.45; padding: 8px 10px; background: rgba(128,128,128,.08);
+  border: 1px solid rgba(128,128,128,.22); border-radius: 6px; margin-bottom: 6px; }
+.hist { font-size: 13.5px; line-height: 1.4; padding: 7px 0; border-bottom: 1px solid rgba(128,128,128,.2); }
+.hist .meta { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: .6; margin-top: 2px; }
+.muted { opacity: .65; font-size: 13.5px; }
+.wait-note { font-size: 13.5px; opacity: .7; margin: .25rem 0 .5rem; }
 [data-testid="stHeaderActionElements"] { display: none; }
 [data-testid="stTabPanel"] h1 { font-size: 1.75rem !important; line-height: 1.25; }
 [data-testid="stTabPanel"] h2 { font-size: 1.3rem !important; margin-top: 1.25rem; }
@@ -141,10 +143,28 @@ goal = st.text_area(
 
 if st.button("Run research", type="primary", icon=":material/play_arrow:", disabled=not goal.strip()):
     st.session_state.pop("result", None)
-    with st.status("Researching…", expanded=True) as status:
+    st.markdown('<p class="wait-note">A full run usually takes 3–5 minutes (longer if the critic sends the '
+                "agent back for more research). The report appears below when it finishes.</p>",
+                unsafe_allow_html=True)
+    with st.status("Recalling memory…", expanded=True) as status:
+        progress = {"total": 0}
+
         def on_step(node, lines):
             for line in lines:
                 st.markdown(step_html(node, line), unsafe_allow_html=True)
+                # plan / reflect list new sub-questions as "- ..." lines
+                progress["total"] += sum(1 for l in line.splitlines() if l.startswith("- "))
+                q = re.match(r"^ACT \[Q(\d+)\]", line)
+                if node == "plan":
+                    status.update(label=f"Planned {progress['total']} sub-questions")
+                elif q:
+                    status.update(label=f"Researching question {q.group(1)} of {progress['total']}…")
+                elif node == "reflect":
+                    status.update(label="Critic is reviewing the findings…")
+                elif node == "write":
+                    status.update(label="Report written, saving…")
+            if node == "reflect" and not any("gaps found" in l for l in lines):
+                status.update(label="Writing the report…")
         try:
             result = run(goal.strip(), mode=mode_key, on_step=on_step)
             st.session_state["result"] = result

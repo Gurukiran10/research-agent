@@ -1,14 +1,24 @@
+# Light and dark themes (switch in the top-right menu: Settings > Theme)
 [theme]
-base = "light"
+baseRadius = "small"
+
+[theme.light]
 primaryColor = "#13203A"
 backgroundColor = "#F6F4EE"
 secondaryBackgroundColor = "#EDEAE1"
 textColor = "#1B2433"
 borderColor = "#E4DFD2"
-baseRadius = "small"
+
+[theme.dark]
+primaryColor = "#5B8DEF"
+backgroundColor = "#0F1A2E"
+secondaryBackgroundColor = "#1A2844"
+textColor = "#E6EAF2"
+borderColor = "#2C3E62"
 
 [client]
-toolbarMode = "minimal"
+# keep the menu (Rerun, Settings/theme, Print) but hide developer options like Deploy
+toolbarMode = "viewer"
 
 [browser]
 gatherUsageStats = false
