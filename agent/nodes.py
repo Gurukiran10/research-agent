@@ -14,7 +14,7 @@ from . import memory, prompts
 from .config import (
     MAX_REFLECTION_ROUNDS, MAX_SUBQUESTIONS, MAX_TOOL_CALLS_PER_STEP, REPORTS_DIR,
 )
-from .llm import get_llm, invoke_with_patience
+from .llm import QuotaExhausted, get_llm, invoke_with_patience
 from .modes import get_mode
 from .state import ResearchState
 from .tools import TOOLS, TOOLS_BY_NAME
@@ -62,13 +62,17 @@ def _bullets(items: list[str], empty: str = "(none)") -> str:
     return "\n".join(f"- {i}" for i in items) if items else empty
 
 
-def _structured(schema, prompt: str, temperature: float, default):
+def _structured(schema, prompt: str, temperature: float, default, fail_fast_on_quota: bool = False):
     """Ask for JSON matching `schema`. Uses Groq's JSON-schema mode, retries
     once, and falls back to a safe default so a malformed reply never crashes
     the workflow."""
     llm = get_llm(temperature).with_structured_output(schema, method="json_schema")
     try:
         return invoke_with_patience(lambda: llm.invoke(prompt))
+    except QuotaExhausted:
+        if fail_fast_on_quota:
+            raise
+        return default
     except Exception:
         return default
 
@@ -130,7 +134,7 @@ def plan(state: ResearchState) -> dict:
         max_q=MAX_SUBQUESTIONS,
         lessons=_bullets(state.get("lessons", [])),
         related=_bullets(state.get("related_reports", [])),
-    ), 0.2, default=Plan(sub_questions=[state["goal"]]))
+    ), 0.2, default=Plan(sub_questions=[state["goal"]]), fail_fast_on_quota=True)  # no quota: stop before any research
     questions = [q.strip() for q in result.sub_questions if q.strip()][:MAX_SUBQUESTIONS] or [state["goal"]]
     return {
         "plan": questions,
@@ -382,9 +386,15 @@ def learn_from_feedback(run_id: int, goal: str, rating: int, feedback: str) -> l
     memory.rate_run(run_id, rating, feedback)
     if not feedback.strip():
         return []
+    unavailable = Lessons(lessons=[])
     result = _structured(Lessons, prompts.LESSON_EXTRACTOR.format(
         rating_word="positively" if rating > 0 else "negatively", feedback=feedback, goal=goal,
-    ), 0.0, default=Lessons())
-    for lesson in result.lessons[:2]:
+    ), 0.0, default=unavailable)
+    lessons = result.lessons[:2]
+    if result is unavailable:
+        # every model was rate-limited: keep the user's own words as the lesson
+        # rather than silently dropping their feedback
+        lessons = [feedback.strip()[:300]]
+    for lesson in lessons:
         memory.add_lesson(lesson)
-    return result.lessons[:2]
+    return lessons

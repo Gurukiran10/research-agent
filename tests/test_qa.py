@@ -185,3 +185,56 @@ def test_truncated_report_is_trimmed_and_closed_with_limitations(tmp_path, monke
     assert "## Limitations" in report and "output limit" in report and "Estimates vary." in report
     assert report.rstrip().endswith("1. https://a.com/x")  # sources still appended
     assert "output limit" in out["trace"][-1]
+
+
+def test_feedback_is_kept_as_a_lesson_when_models_are_rate_limited(tmp_path, monkeypatch):
+    from agent import llm, nodes
+
+    class RateLimited:
+        def with_structured_output(self, schema, **kw):
+            return self
+
+        def invoke(self, prompt):
+            raise RuntimeError("429 rate limit")
+
+    monkeypatch.setattr(llm, "PATIENCE_S", 0)
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: RateLimited())
+    monkeypatch.setattr(memory, "MEMORY_DB", tmp_path / "m.sqlite")
+    run_id = memory.save_run("g", "r")
+    learned = nodes.learn_from_feedback(run_id, "g", 1, "  Always end with a recommendation  ")
+    assert learned == ["Always end with a recommendation"]
+    assert memory.get_lessons() == ["Always end with a recommendation"]
+
+
+def test_qwen_keeps_reasoning_hidden_not_disabled():
+    """Disabling qwen's reasoning broke its JSON output (planner, critic,
+    feedback), so it must stay 'hidden'."""
+    from agent.llm import _chat
+
+    q = _chat("qwen/qwen3.8-27b", 0.0)
+    assert q.reasoning_format == "hidden" and q.reasoning_effort is None and q.max_tokens <= 1000
+
+
+def test_run_fails_fast_when_every_models_daily_quota_is_spent(tmp_path, monkeypatch):
+    import time as _time
+
+    from agent import llm, nodes
+
+    class Spent:
+        def invoke(self, prompt):
+            raise RuntimeError("Error code: 429 - Rate limit reached ... tokens per day (TPD): Limit 200000")
+
+    monkeypatch.setattr(llm, "_exhausted_until", {})
+    monkeypatch.setattr(llm, "PATIENCE_S", 30)  # must NOT be waited on for a daily limit
+    chain = llm._Chain([("a", Spent()), ("b", Spent())])
+
+    class SpentLLM:
+        def with_structured_output(self, schema, **kw):
+            return chain
+
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: SpentLLM())
+    monkeypatch.setattr(memory, "MEMORY_DB", tmp_path / "m.sqlite")
+    t0 = _time.time()
+    with pytest.raises(llm.QuotaExhausted, match="used up for today"):
+        run("Compare LangGraph and CrewAI for building agents")
+    assert _time.time() - t0 < 5 and memory.count_runs() == 0

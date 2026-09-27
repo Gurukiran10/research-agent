@@ -25,9 +25,11 @@ def _chat(model: str, temperature: float) -> ChatGroq:
         # gpt-oss models "think" before answering; low effort keeps runs fast and cheap.
         extra = {"reasoning_effort": REASONING_EFFORT}
     elif "qwen" in model:
-        # its free tier allows only 1000 output tokens/minute: turn off hidden
-        # "thinking" (which spends that budget) and ask for less than the cap
-        extra = {"reasoning_effort": "none", "max_tokens": 950}
+        # keep qwen's reasoning out of the answer text; its free tier allows only
+        # 1000 output tokens/minute, so ask for less than the cap. (Turning its
+        # reasoning off entirely breaks its JSON output, which the planner and
+        # critic rely on.)
+        extra = {"reasoning_format": "hidden", "max_tokens": 950}
     else:
         extra = {}
     # max_retries handles short per-minute 429s with back-off.
@@ -39,6 +41,10 @@ def _is_daily_limit(error: Exception) -> bool:
     return "429" in text and ("tokens per day" in text or "requests per day" in text or "(TPD)" in text)
 
 
+class QuotaExhausted(RuntimeError):
+    """Every model has used up its daily free-tier quota: waiting won't help."""
+
+
 class _Chain:
     """Tries each model's runnable in order, skipping models whose daily quota is spent."""
 
@@ -46,7 +52,7 @@ class _Chain:
         self.named = named_runnables
 
     def invoke(self, prompt):
-        last_error = None
+        last_error, all_daily = None, True
         for name, runnable in self.named:
             if _exhausted_until.get(name, 0) > time.time():
                 continue
@@ -55,8 +61,15 @@ class _Chain:
             except Exception as e:
                 if _is_daily_limit(e):
                     _exhausted_until[name] = time.time() + DAILY_LIMIT_COOLDOWN_S
+                else:
+                    all_daily = False
                 last_error = e
-        raise last_error or RuntimeError("All models are over their daily free-tier quota; try again later.")
+        if all_daily:
+            raise QuotaExhausted(
+                "The free Groq AI quota is used up for today on every model. "
+                "It frees up gradually over the next hours; try again later."
+            ) from last_error
+        raise last_error
 
 
 class LLM:
@@ -82,6 +95,8 @@ def invoke_with_patience(call):
     clear within a minute), wait once and try again before giving up."""
     try:
         return call()
+    except QuotaExhausted:
+        raise  # daily quota: waiting a minute won't help, fail fast
     except Exception:
         time.sleep(PATIENCE_S)
         return call()

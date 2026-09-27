@@ -25,7 +25,8 @@ GROQ_FALLBACK_MODELS = [
 # gpt-oss models "think" before answering; low effort keeps runs fast.
 REASONING_EFFORT = os.getenv("REASONING_EFFORT", "low")
 
-MEMORY_DB = DATA_DIR / "memory.sqlite"
+# override to keep separate memories, e.g. a clean one for demos
+MEMORY_DB = Path(os.getenv("MEMORY_DB", DATA_DIR / "memory.sqlite"))
 
 # Guard-rails that keep the agent bounded (and inside free-tier rate limits).
 MAX_SUBQUESTIONS = int(os.getenv("MAX_SUBQUESTIONS", "3"))

@@ -10,6 +10,7 @@ import streamlit as st
 from agent import memory
 from agent.config import GROQ_MODEL
 from agent.graph import MAX_GOAL_CHARS, run
+from agent.llm import QuotaExhausted
 from agent.modes import MODES, get_mode
 from agent.nodes import learn_from_feedback
 
@@ -195,17 +196,17 @@ if st.button("Run research", type="primary", icon=":material/play_arrow:", disab
                 progress["total"] += sum(1 for l in line.splitlines() if l.startswith("- "))
                 q = re.match(r"^ACT \[Q(\d+)\]", line)
                 if line == "TRIAGE: research request":
-                    status.update(label="Recalling memory…")
+                    status.update(label="Recalling memory…", expanded=True)
                 elif node == "plan":
-                    status.update(label=f"Planned {progress['total']} sub-questions")
+                    status.update(label=f"Planned {progress['total']} sub-questions", expanded=True)
                 elif q:
-                    status.update(label=f"Researching question {q.group(1)} of {progress['total']}…")
+                    status.update(label=f"Researching question {q.group(1)} of {progress['total']}…", expanded=True)
                 elif node == "reflect":
-                    status.update(label="Critic is reviewing the findings…")
+                    status.update(label="Critic is reviewing the findings…", expanded=True)
                 elif node == "write":
-                    status.update(label="Report written, saving…")
+                    status.update(label="Report written, saving…", expanded=True)
             if node == "reflect" and not any("gaps found" in l for l in lines):
-                status.update(label="Writing the report…")
+                status.update(label="Writing the report…", expanded=True)
         try:
             result = run(goal.strip(), mode=mode_key, on_step=on_step)
             if result.get("is_research", True):
@@ -215,6 +216,9 @@ if st.button("Run research", type="primary", icon=":material/play_arrow:", disab
             else:  # small talk: triage answered directly, nothing was researched or saved
                 status.update(label="Not a research request", state="complete", expanded=False)
                 notice = ("info", result["report"])
+        except QuotaExhausted as e:  # no free AI quota left today: say so plainly
+            status.update(label="Free AI quota used up", state="error", expanded=False)
+            notice = ("warning", str(e))
         except ValueError as e:  # invalid input, e.g. a blank goal
             status.update(label="Check your input", state="error", expanded=False)
             notice = ("warning", str(e))

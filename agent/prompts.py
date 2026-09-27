@@ -111,6 +111,7 @@ Rules:
   Use no other citation format and do NOT write or mention a Sources section -
   it is added automatically.
 - Maximum 450 words and at most 6 rows per table. Finish every section; do not stop mid-sentence.
+- Write any formula in plain text, e.g. (1652.2 / 487.1)^(1/5) - 1 = 27.7%. Never use LaTeX or $ math.
 """
 
 LESSON_EXTRACTOR = """A user rated a research report {rating_word} and left this feedback:
