@@ -1,16 +1,24 @@
 """Command-line entry point.
 
     python cli.py "Compare the top 3 open-source vector databases in 2026"
+    python cli.py --mode market "EV charging market size in India"
+    modes: general, competitor, market, leads
 """
+import argparse
 import sys
 
 from agent.graph import run
+from agent.modes import MODES
 from agent.nodes import learn_from_feedback
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
-    goal = " ".join(sys.argv[1:]).strip() or input("Research goal: ").strip()
+    parser = argparse.ArgumentParser(description="Autonomous research agent")
+    parser.add_argument("--mode", choices=list(MODES), default="general")
+    parser.add_argument("goal", nargs="*")
+    args = parser.parse_args()
+    goal = " ".join(args.goal).strip() or input("Research goal: ").strip()
     if not goal:
         sys.exit("Please provide a research goal.")
 
@@ -18,7 +26,7 @@ def main():
         for line in lines:
             print(f"\n[{node}] {line}", flush=True)
 
-    state = run(goal, on_step=show)
+    state = run(goal, mode=args.mode, on_step=show)
     print("\n" + "=" * 70 + "\n" + state["report"] + "\n" + "=" * 70)
     print(f"Saved to {state['report_path']}")
 

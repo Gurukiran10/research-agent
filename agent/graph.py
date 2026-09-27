@@ -31,10 +31,10 @@ def build_graph():
 graph = build_graph()
 
 
-def run(goal: str, on_step=None) -> dict:
+def run(goal: str, mode: str = "general", on_step=None) -> dict:
     """Run the agent end-to-end. `on_step(node_name, new_trace_lines)` is
     called after every node so UIs can show live progress."""
-    state: dict = {"goal": goal, "trace": []}
+    state: dict = {"goal": goal, "mode": mode, "trace": []}
     # recursion_limit bounds total node executions as a final safety net.
     for chunk in graph.stream(state, stream_mode="updates", config={"recursion_limit": 100}):
         for node_name, update in chunk.items():

@@ -20,11 +20,28 @@ Why this task: research is open-ended, so the agent really has to *decide* what 
 (which query to run, which page to open, when it has enough evidence, whether the overall
 answer has gaps). That shows agentic behaviour better than a fixed pipeline.
 
+### Research modes: one engine, four business tasks
+
+The same agent workflow is specialised for the business-intelligence tasks listed in the
+contest brief. A mode changes **what the planner covers, what evidence the executor hunts for,
+what the critic checks, and the shape of the final report**. The graph itself doesn't change.
+
+| Mode | Example goal | Report sections |
+|---|---|---|
+| 🔎 **General Research** | *Compare LangGraph, CrewAI and AutoGen* | Key Findings · Details · Limitations |
+| 🏢 **Competitor Intelligence** | *Who are Zoho CRM's main competitors and how do they compare on pricing?* | Competitor Comparison table · Company Profiles · Strategic Signals (launches, funding, hiring) · Opportunities & Threats |
+| 📊 **Market Research** | *Size and growth rate of the EV charging market in India* | Market Size & Growth table · TAM/SAM/SOM (with calculator-checked arithmetic) · Key Players · Drivers & Trends |
+| 🎯 **Lead Research** | *Engineering colleges in Bangalore with AI/ML programs* | Lead Table · Fit Scoring (High/Medium/Low) · Suggested Outreach Angle |
+
+Modes are plain data in [`agent/modes.py`](agent/modes.py), so adding a new one (e.g. a hiring
+tracker) takes one entry, not new code. Lead Research only collects public,
+organisation-level contact routes and never guesses personal emails or phone numbers.
+
 ## 2. Features
 
 | Agentic principle | How it's implemented |
 |---|---|
-| **Task input** | Text goal via Web UI (Streamlit), CLI, or REST API (FastAPI) |
+| **Task input** | Text goal plus a research mode, via Web UI (Streamlit), CLI, or REST API (FastAPI) |
 | **Planning** | `plan` node: LLM breaks the goal into ≤3 ordered sub-questions (structured output) |
 | **Reasoning + tool use (ReAct)** | `act` ⇄ `tools` loop per sub-question: the LLM chooses a tool, sees the result, decides again |
 | **Tools** | `web_search` (DuckDuckGo), `read_webpage` (HTML → text), `calculator` (safe AST eval), `search_past_research` (memory) |
@@ -66,6 +83,7 @@ research-agent/
 │   ├── nodes.py     # recall, plan, act, tools, record, reflect, write, remember + routers
 │   ├── tools.py     # web_search, read_webpage, calculator, search_past_research
 │   ├── memory.py    # SQLite long-term memory: runs, ratings, lessons
+│   ├── modes.py     # research modes: general / competitor / market / leads
 │   ├── prompts.py   # all prompt templates (planner, executor, critic, writer, lesson extractor)
 │   ├── llm.py       # LLM factory (Groq), easy to swap provider
 │   └── config.py    # env config + safety limits
@@ -106,6 +124,7 @@ Run it any of three ways:
 ```bash
 streamlit run app.py                                   # Web UI (recommended)
 python cli.py "Compare LangGraph, CrewAI and AutoGen"  # terminal
+python cli.py --mode market "EV charging market in India"
 uvicorn api:app --reload                               # REST API → http://127.0.0.1:8000/docs
 ```
 

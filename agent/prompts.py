@@ -6,6 +6,8 @@ answered together, fully cover the goal. Order them logically (background first,
 specifics next, comparisons / outlook last). Each must be answerable by web research.
 
 Research goal: {goal}
+Research mode: {mode_label}
+Mode-specific planning focus: {mode_planning}
 
 Lessons learned from the user's feedback on earlier reports (follow them):
 {lessons}
@@ -20,6 +22,7 @@ at a time, using a Reason -> Act -> Observe loop.
 
 Overall goal: {goal}
 Current sub-question ({step}/{total}): {question}
+Research mode: {mode_label} - {mode_execution}
 
 What has been found so far on earlier sub-questions (use it, don't repeat it):
 {previous}
@@ -50,6 +53,7 @@ REFLECTOR = """You are the CRITIC of a research agent. Check whether the finding
 below are enough to write a complete, accurate report for the goal.
 
 Goal: {goal}
+Research mode: {mode_label} (the report must be able to fill: {mode_sections})
 
 Findings:
 {findings}
@@ -74,21 +78,21 @@ Reviewer notes: {critique}
 User preferences learned from past feedback (follow them):
 {lessons}
 
-Structure:
-# <clear title>
-**TL;DR** - 2-3 sentence answer to the goal.
-## Key Findings  - 4-7 bullets, each ending with a citation like [1] or [2][3]
-## Details       - short sections (a compact comparison table is fine if useful)
-## Limitations   - what could not be verified, including the reviewer's gaps
+Research mode: {mode_label}
+Structure (follow it; every factual bullet or table row ends with a citation like [1] or [2][3]):
+{mode_report}
 
 Rules:
 - Use ONLY facts and numbers that appear in the findings. If a number is not in
   the findings, leave it out.
 - Never claim something was calculated or verified unless the findings show a
   calculator result for it. If figures conflict, say so instead of picking one.
-- Cite with the plain [n] markers given next to each finding ("Cite as"). Use no
-  other citation format and do NOT write or mention a Sources section - it is added automatically.
-- Maximum 550 words. Finish every section; do not stop mid-sentence.
+- Cite with the plain [n] markers that appear inside the findings: use the marker
+  attached to the specific fact you are stating, not just the first source. If a
+  fact has no marker, cite from that answer's "Sources for this answer" list.
+  Use no other citation format and do NOT write or mention a Sources section -
+  it is added automatically.
+- Maximum 600 words. Finish every section; do not stop mid-sentence.
 """
 
 LESSON_EXTRACTOR = """A user rated a research report {rating_word} and left this feedback:

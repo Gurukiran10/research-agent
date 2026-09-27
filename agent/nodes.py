@@ -14,6 +14,7 @@ from .config import (
     MAX_REFLECTION_ROUNDS, MAX_SUBQUESTIONS, MAX_TOOL_CALLS_PER_STEP, REPORTS_DIR,
 )
 from .llm import get_llm
+from .modes import get_mode
 from .state import ResearchState
 from .tools import TOOLS, TOOLS_BY_NAME
 
@@ -77,14 +78,18 @@ def recall(state: ResearchState) -> dict:
     return {
         "lessons": lessons,
         "related_reports": summaries,
-        "trace": _log(state, f"RECALL: {len(lessons)} lesson(s), {len(summaries)} related past report(s)"),
+        "trace": _log(state, f"RECALL: mode={get_mode(state.get('mode')).label} | "
+                             f"{len(lessons)} lesson(s), {len(summaries)} related past report(s)"),
     }
 
 
 def plan(state: ResearchState) -> dict:
     """Break the goal into ordered sub-questions."""
+    mode = get_mode(state.get("mode"))
     result = _structured(Plan, prompts.PLANNER.format(
         goal=state["goal"],
+        mode_label=mode.label,
+        mode_planning=mode.planning,
         max_q=MAX_SUBQUESTIONS,
         lessons=_bullets(state.get("lessons", [])),
         related=_bullets(state.get("related_reports", [])),
@@ -110,6 +115,8 @@ def act(state: ResearchState) -> dict:
         previous = "\n".join(f"- {f['question']}: {f['answer'][:400]}" for f in state.get("findings", []))
         messages = [
             SystemMessage(prompts.EXECUTOR.format(
+                mode_label=get_mode(state.get("mode")).label,
+                mode_execution=get_mode(state.get("mode")).execution,
                 goal=state["goal"], step=idx + 1, total=len(state["plan"]), question=question,
                 previous=previous or "(this is the first sub-question)", budget=MAX_TOOL_CALLS_PER_STEP,
                 lessons=_bullets(state.get("lessons", [])),
@@ -214,7 +221,11 @@ def record(state: ResearchState) -> dict:
 def reflect(state: ResearchState) -> dict:
     """Critique the findings; add follow-up questions if there are gaps."""
     result = _structured(
-        Critique, prompts.REFLECTOR.format(goal=state["goal"], findings=_findings_text(state)), 0.0,
+        Critique, prompts.REFLECTOR.format(
+            goal=state["goal"], findings=_findings_text(state),
+            mode_label=get_mode(state.get("mode")).label,
+            mode_sections=", ".join(get_mode(state.get("mode")).sections),
+        ), 0.0,
         default=Critique(sufficient=True, critique="(critic unavailable - proceeding to write)"),
     )
     rounds = state.get("reflection_rounds", 0)
@@ -236,13 +247,22 @@ def write(state: ResearchState) -> dict:
     # code appends the Sources list, so every URL in the report is real.
     sources = list(dict.fromkeys(u for f in state.get("findings", []) for u in f["sources"]))
     num = {u: i for i, u in enumerate(sources, 1)}
+    num_by_norm = {_norm(u): i for u, i in num.items()}
+
+    def cite_inline(match):  # keep claim->source links: swap each verified URL for its [n]
+        n = num_by_norm.get(_norm(match.group(0)))
+        return f"[{n}]" if n else ""
+
     findings = "\n\n".join(
-        f"Q{i}: {f['question']}\nA: {URL_RE.sub('', f['answer'])[:1500]}\n"
-        f"Cite as: {' '.join(f'[{num[u]}]' for u in f['sources']) or '(no sources)'}"
+        f"Q{i}: {f['question']}\nA: {URL_RE.sub(cite_inline, f['answer'])[:1500]}\n"
+        f"Sources for this answer: {' '.join(f'[{num[u]}]' for u in f['sources']) or '(none)'}"
         for i, f in enumerate(state.get("findings", []), 1)
     )
+    mode = get_mode(state.get("mode"))
     report = get_llm(0.3).invoke(prompts.WRITER.format(
         goal=state["goal"],
+        mode_label=mode.label,
+        mode_report=mode.report,
         findings=findings,
         critique=state.get("critique", ""),
         lessons=_bullets(state.get("lessons", [])),
@@ -251,14 +271,14 @@ def write(state: ResearchState) -> dict:
     report = re.split(r"\n#+\s*Sources\b", report)[0].rstrip()  # drop any LLM-written source list
     report += "\n\n## Sources\n" + ("\n".join(f"{i}. {u}" for u, i in num.items()) or "_No sources._")
     slug = re.sub(r"[^a-z0-9]+", "-", state["goal"].lower()).strip("-")[:50] or "report"
-    path = REPORTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{slug}.md"
+    path = REPORTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{mode.key}-{slug}.md"
     path.write_text(report, encoding="utf-8")
     return {"report": report, "report_path": str(path), "trace": _log(state, f"WRITE: report saved to {path.name}")}
 
 
 def remember(state: ResearchState) -> dict:
     """Persist the run so future research can reuse it."""
-    run_id = memory.save_run(state["goal"], state["report"])
+    run_id = memory.save_run(state["goal"], state["report"], state.get("mode", "general"))
     return {"run_id": run_id, "trace": _log(state, f"REMEMBER: stored as run #{run_id}")}
 
 

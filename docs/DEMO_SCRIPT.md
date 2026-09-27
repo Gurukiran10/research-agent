@@ -21,8 +21,15 @@ editor, or start the run, keep talking over the live log, and cut the waiting.
 > add follow-up questions. That's a conditional loop, not a fixed pipeline. Finally
 > it writes the report and stores it in memory."
 
-**0:50-2:30 | Live run** (Streamlit UI: `streamlit run app.py`)
-- Type a goal, e.g. *"How big is the global AI agents market in 2025 and what CAGR is forecast to 2030?"*
+**0:50-1:05 | Research modes** (Streamlit UI: `streamlit run app.py`)
+> "The same engine has four modes for business tasks from the brief: general research,
+> competitor intelligence, market research, and lead research. Each mode changes what the
+> agent plans, what evidence it looks for, and the report format."
+- Click through the 4 mode buttons so the report sections change on screen.
+
+**1:05-2:30 | Live run**
+- Pick **🏢 Competitor Intelligence**, click **Try example** (Zoho CRM competitors) and run it.
+  (Or **📊 Market Research** with the example to show the calculator being used.)
 - Point at the live log:
   > "Here it recalled one related past report from memory... here's the plan it made...
   > now it decided on its own to call web search... it read this page... here it used the

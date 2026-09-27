@@ -27,6 +27,9 @@ def _conn():
             created_at TEXT, goal TEXT, report TEXT,
             rating INTEGER, feedback TEXT)"""
     )
+    # migrate databases created before research modes existed
+    if "mode" not in {r[1] for r in conn.execute("PRAGMA table_info(runs)")}:
+        conn.execute("ALTER TABLE runs ADD COLUMN mode TEXT DEFAULT 'general'")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS lessons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,11 +42,11 @@ def _keywords(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 2 and w not in _STOPWORDS}
 
 
-def save_run(goal: str, report: str) -> int:
+def save_run(goal: str, report: str, mode: str = "general") -> int:
     with closing(_conn()) as conn, conn:
         cur = conn.execute(
-            "INSERT INTO runs (created_at, goal, report) VALUES (?, ?, ?)",
-            (datetime.now().isoformat(timespec="seconds"), goal, report),
+            "INSERT INTO runs (created_at, goal, report, mode) VALUES (?, ?, ?, ?)",
+            (datetime.now().isoformat(timespec="seconds"), goal, report, mode),
         )
         return cur.lastrowid
 
@@ -92,6 +95,6 @@ def find_related_reports(query: str, limit: int = 2) -> list[dict]:
 def list_runs(limit: int = 20) -> list[dict]:
     with closing(_conn()) as conn:
         rows = conn.execute(
-            "SELECT id, created_at, goal, rating, feedback FROM runs ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT id, created_at, goal, mode, rating, feedback FROM runs ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
     return [dict(r) for r in rows]

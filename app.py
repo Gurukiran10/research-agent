@@ -7,6 +7,7 @@ import streamlit as st
 from agent import memory
 from agent.config import GROQ_MODEL
 from agent.graph import run
+from agent.modes import MODES, get_mode
 from agent.nodes import learn_from_feedback
 
 st.set_page_config(page_title="Research Agent", page_icon="🔎", layout="wide")
@@ -35,14 +36,22 @@ with st.sidebar:
     st.subheader("Past research")
     for r in memory.list_runs(10):
         icon = {1: "👍", -1: "👎"}.get(r["rating"], "•")
-        st.markdown(f"{icon} {r['goal']}")
+        st.markdown(f"{icon} {get_mode(r.get('mode')).label.split()[0]} {r['goal']}")
 
 st.title("🔎 Autonomous Research Agent")
 st.write("Give it a research goal. It **plans** sub-questions, **acts** with tools "
          "(web search, page reader, calculator, memory), **observes** results, "
          "**reflects** on gaps, and **writes** a cited report - and it learns from your feedback.")
 
-goal = st.text_input("Research goal", placeholder="e.g. Compare LangGraph, CrewAI and AutoGen for building AI agents")
+mode_key = st.radio(
+    "Research mode", list(MODES), format_func=lambda k: MODES[k].label, horizontal=True, key="mode",
+)
+mode = MODES[mode_key]
+st.caption(f"{mode.description}  \nReport sections: {' · '.join(mode.sections)}")
+
+if st.button(f"Try example: “{mode.example}”"):
+    st.session_state["goal_input"] = mode.example
+goal = st.text_input("Research goal", placeholder=f"e.g. {mode.example}", key="goal_input")
 
 if st.button("Run agent", type="primary", disabled=not goal.strip()):
     st.session_state.pop("result", None)
@@ -53,7 +62,7 @@ if st.button("Run agent", type="primary", disabled=not goal.strip()):
             for line in lines:
                 log.markdown(f"**{NODE_LABELS.get(node, node)}** - {line}".replace("\n", "  \n"))
         try:
-            st.session_state["result"] = run(goal.strip(), on_step=on_step)
+            st.session_state["result"] = run(goal.strip(), mode=mode_key, on_step=on_step)
             st.session_state["goal"] = goal.strip()
         except Exception as e:
             st.error(f"Agent failed: {e}")

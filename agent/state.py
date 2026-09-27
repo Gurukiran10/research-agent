@@ -18,6 +18,7 @@ class Finding(TypedDict):
 class ResearchState(TypedDict, total=False):
     # --- input ---
     goal: str
+    mode: str                   # research mode key, see agent/modes.py
 
     # --- long-term memory pulled in at the start ---
     lessons: list[str]          # user-feedback lessons from earlier runs

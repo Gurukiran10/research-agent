@@ -71,7 +71,7 @@ def test_full_workflow_with_fake_llm(tmp_path, monkeypatch):
     monkeypatch.setattr(memory, "MEMORY_DB", tmp_path / "m.sqlite")
     FakeLLM.reflections = 0
 
-    state = graph_mod.run("Research X")
+    state = graph_mod.run("Research X", mode="market")
 
     assert state["plan"] == ["What is X?", "Why does X matter?", "How big is X?"]  # reflection added a step
     assert len(state["findings"]) == 3
@@ -83,6 +83,57 @@ def test_full_workflow_with_fake_llm(tmp_path, monkeypatch):
     assert any(t.startswith("REFLECT: gaps found") for t in state["trace"])
     assert any("calculator" in t for t in state["trace"])
     assert memory.list_runs()[0]["goal"] == "Research X"
+    assert memory.list_runs()[0]["mode"] == "market"
+    assert "-market-" in Path(state["report_path"]).name
+    assert "mode=📊 Market Research" in state["trace"][0]
+
+
+def test_writer_sees_which_source_backs_each_fact(tmp_path, monkeypatch):
+    seen = {}
+
+    class CapturingLLM:
+        def invoke(self, prompt):
+            seen["prompt"] = prompt
+            return AIMessage(content="# R")
+
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: CapturingLLM())
+    monkeypatch.setattr(nodes, "REPORTS_DIR", tmp_path)
+    finding = {
+        "question": "q",
+        "answer": "Salesforce costs $25 (source: https://a.com/x). Pipedrive costs $15 (source: https://b.com/y/).",
+        "sources": ["https://a.com/x", "https://b.com/y"],
+    }
+    out = nodes.write({"goal": "g", "mode": "competitor", "findings": [finding], "trace": []})
+    assert "Salesforce costs $25 (source: [1])" in seen["prompt"]
+    assert "Pipedrive costs $15 (source: [2])" in seen["prompt"]
+    assert "https://" not in seen["prompt"]  # URLs never reach the writer
+    assert out["report"].endswith("1. https://a.com/x\n2. https://b.com/y")
+
+
+def test_entry_points_compile():
+    import py_compile
+
+    root = Path(__file__).resolve().parent.parent
+    for name in ("app.py", "cli.py", "api.py"):
+        py_compile.compile(str(root / name), doraise=True)
+
+
+def test_every_mode_fills_every_prompt():
+    """A typo in a mode or a prompt placeholder would only show up at runtime -
+    format every prompt with every mode to catch it offline."""
+    from agent import prompts
+    from agent.modes import MODES
+
+    for mode in MODES.values():
+        assert mode.sections and mode.sections[-1] == "Limitations", mode.key
+        prompts.PLANNER.format(goal="g", max_q=3, lessons="-", related="-",
+                               mode_label=mode.label, mode_planning=mode.planning)
+        prompts.EXECUTOR.format(goal="g", step=1, total=3, question="q", previous="-", budget=3,
+                                lessons="-", mode_label=mode.label, mode_execution=mode.execution)
+        prompts.REFLECTOR.format(goal="g", findings="-", mode_label=mode.label,
+                                 mode_sections=", ".join(mode.sections))
+        prompts.WRITER.format(goal="g", findings="-", critique="-", lessons="-",
+                              mode_label=mode.label, mode_report=mode.report)
 
 
 def test_invented_tool_falls_back_to_answer(monkeypatch):
