@@ -1,6 +1,7 @@
 """Graph nodes. Each function takes the current state and returns an update.
 
-Flow:  recall -> plan -> act <-> tools -> record -> (next step | reflect)
+Flow:  triage -> (reply and stop | recall)
+       recall -> plan -> act <-> tools -> record -> (next step | reflect)
        reflect -> (more research | write) -> write -> remember
 """
 import re
@@ -36,6 +37,22 @@ class Lessons(BaseModel):
     lessons: list[str] = Field(default_factory=list)
 
 
+class Triage(BaseModel):
+    is_research: bool = Field(description="True if the message asks to research a topic or question")
+    reply: str = Field(default="", description="If not research: a short friendly reply with an example request")
+
+
+GREETING_RE = re.compile(
+    r"^(hi+|hello+|hey+|hiya|yo|sup|hola|namaste|thanks?|thank you|thx|ty|ok(ay)?|cool|nice|bye|"
+    r"good (morning|afternoon|evening|night)|how are you|what'?s up|test(ing)?)\b[\s!.?,]*(there|agent|bot)?[\s!.?]*$",
+    re.IGNORECASE,
+)
+SMALL_TALK_REPLY = (
+    "Hi! I'm a research agent. Give me a topic or a question and I'll search the web, check the "
+    "evidence and write a cited report. For example: \"Compare LangGraph and CrewAI for building AI agents\"."
+)
+
+
 # ---------- helpers ----------
 def _log(state: ResearchState, msg: str) -> list[str]:
     return state.get("trace", []) + [msg]
@@ -68,6 +85,27 @@ def _findings_text(state: ResearchState, max_chars: int = 900) -> str:
 
 
 # ---------- nodes ----------
+def triage(state: ResearchState) -> dict:
+    """Decide whether the message is a research request at all, so greetings
+    and small talk get an instant reply instead of a multi-minute research run."""
+    goal = state["goal"]
+    if GREETING_RE.match(goal):
+        return {"is_research": False, "report": SMALL_TALK_REPLY,
+                "trace": _log(state, "TRIAGE: small talk -> replying directly, no research needed")}
+    if len(goal.split()) >= 4:  # clearly a request; don't spend an LLM call on it
+        return {"is_research": True, "trace": _log(state, "TRIAGE: research request")}
+    # short input ("LangGraph", "who are you?"): one quick LLM check, no retries or waiting
+    try:
+        result = get_llm(0.0).with_structured_output(Triage, method="json_schema").invoke(
+            prompts.TRIAGE.format(goal=goal, today=date.today().isoformat()))
+    except Exception:
+        result = Triage(is_research=True)  # when unsure, research
+    if result.is_research:
+        return {"is_research": True, "trace": _log(state, "TRIAGE: research request")}
+    return {"is_research": False, "report": result.reply.strip() or SMALL_TALK_REPLY,
+            "trace": _log(state, "TRIAGE: not a research request -> replying directly")}
+
+
 def recall(state: ResearchState) -> dict:
     """Load long-term memory relevant to this goal."""
     lessons = memory.get_lessons()
@@ -306,6 +344,10 @@ def remember(state: ResearchState) -> dict:
 
 
 # ---------- routers (conditional edges) ----------
+def after_triage(state: ResearchState) -> str:
+    return "recall" if state.get("is_research", True) else "end"
+
+
 def after_act(state: ResearchState) -> str:
     return "tools" if state["messages"][-1].tool_calls else "record"
 

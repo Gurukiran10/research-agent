@@ -19,6 +19,7 @@ class ResearchState(TypedDict, total=False):
     # --- input ---
     goal: str
     mode: str                   # research mode key, see agent/modes.py
+    is_research: bool           # set by triage; False = small talk, answered directly
 
     # --- long-term memory pulled in at the start ---
     lessons: list[str]          # user-feedback lessons from earlier runs

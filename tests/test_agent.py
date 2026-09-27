@@ -79,7 +79,7 @@ def test_full_workflow_with_fake_llm(tmp_path, monkeypatch):
     monkeypatch.setattr(memory, "MEMORY_DB", tmp_path / "m.sqlite")
     FakeLLM.reflections = 0
 
-    state = graph_mod.run("Research X", mode="market")
+    state = graph_mod.run("Research the X market in detail", mode="market")
 
     assert state["plan"] == ["What is X?", "Why does X matter?", "How big is X?"]  # reflection added a step
     assert len(state["findings"]) == 3
@@ -90,12 +90,13 @@ def test_full_workflow_with_fake_llm(tmp_path, monkeypatch):
     assert Path(state["report_path"]).exists()
     assert any(t.startswith("REFLECT: gaps found") for t in state["trace"])
     assert any("calculator" in t for t in state["trace"])
-    assert memory.list_runs()[0]["goal"] == "Research X"
+    assert memory.list_runs()[0]["goal"] == "Research the X market in detail"
     assert memory.list_runs()[0]["mode"] == "market"
     saved = memory.get_run(state["run_id"])["details"]
     assert saved["plan"] == state["plan"] and len(saved["findings"]) == 3 and saved["trace"]
     assert "-market-" in Path(state["report_path"]).name
-    assert "mode=Market Research" in state["trace"][0]
+    assert state["trace"][0] == "TRIAGE: research request"
+    assert "mode=Market Research" in state["trace"][1]
 
 
 def test_writer_sees_which_source_backs_each_fact(tmp_path, monkeypatch):

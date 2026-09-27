@@ -42,6 +42,7 @@ organisation-level contact routes and never guesses personal emails or phone num
 | Agentic principle | How it's implemented |
 |---|---|
 | **Task input** | Text goal plus a research mode, via Web UI (Streamlit), CLI, or REST API (FastAPI) |
+| **Intent routing** | `triage` node: greetings and small talk get an instant reply; only real research requests start the workflow (clear requests skip the LLM check) |
 | **Planning** | `plan` node: LLM breaks the goal into ≤3 ordered sub-questions (structured output) |
 | **Reasoning + tool use (ReAct)** | `act` ⇄ `tools` loop per sub-question: the LLM chooses a tool, sees the result, decides again |
 | **Tools** | `web_search` (DuckDuckGo), `read_webpage` (HTML → text), `calculator` (safe AST eval), `search_past_research` (memory) |
@@ -58,7 +59,9 @@ organisation-level contact routes and never guesses personal emails or phone num
 
 ```mermaid
 flowchart TD
-    U([User goal]) --> R[recall<br/>load lessons + related past reports]
+    U([User message]) --> TR[triage<br/>research request or small talk?]
+    TR -- small talk --> QR([instant reply, nothing saved])
+    TR -- research --> R[recall<br/>load lessons + related past reports]
     R --> P[plan<br/>LLM → ordered sub-questions]
     P --> A[act<br/>LLM reasons about current sub-question]
     A -- tool call --> T[tools<br/>web_search · read_webpage<br/>calculator · search_past_research]

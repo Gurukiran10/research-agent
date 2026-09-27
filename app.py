@@ -19,6 +19,7 @@ HISTORY_PREVIEW = 6  # past runs shown in the sidebar before "Show all"
 
 # (tag text, tag colour) for each graph node in the live timeline
 STEP_TAGS = {
+    "triage": ("INTENT", "#0F766E"),
     "recall": ("MEMORY", "#6B7280"),
     "plan": ("PLAN", "#13203A"),
     "act": ("THINK", "#2F5DA8"),
@@ -29,7 +30,7 @@ STEP_TAGS = {
     "remember": ("SAVED", "#6B7280"),
 }
 TRACE_PREFIX = {  # trace lines start with these words; map them back to nodes
-    "RECALL": "recall", "PLAN": "plan", "ACT": "act", "OBSERVE": "tools",
+    "TRIAGE": "triage", "RECALL": "recall", "PLAN": "plan", "ACT": "act", "OBSERVE": "tools",
     "RECORD": "record", "REFLECT": "reflect", "WRITE": "write", "REMEMBER": "remember",
 }
 
@@ -179,10 +180,12 @@ goal = st.text_area(
 
 if st.button("Run research", type="primary", icon=":material/play_arrow:", disabled=not goal.strip()):
     st.session_state.pop("result", None)
-    st.markdown('<p class="wait-note">A full run usually takes 3–5 minutes (longer if the critic sends the '
-                "agent back for more research). The report appears below when it finishes.</p>",
-                unsafe_allow_html=True)
-    with st.status("Recalling memory…", expanded=True) as status:
+    wait_note = st.empty()
+    wait_note.markdown('<p class="wait-note">A full run usually takes 3–5 minutes (longer if the critic sends '
+                       "the agent back for more research). The report appears below when it finishes.</p>",
+                       unsafe_allow_html=True)
+    notice = None  # (kind, text) shown below the status box, which collapses when done
+    with st.status("Reading your request…", expanded=True) as status:
         progress = {"total": 0}
 
         def on_step(node, lines):
@@ -191,7 +194,9 @@ if st.button("Run research", type="primary", icon=":material/play_arrow:", disab
                 # plan / reflect list new sub-questions as "- ..." lines
                 progress["total"] += sum(1 for l in line.splitlines() if l.startswith("- "))
                 q = re.match(r"^ACT \[Q(\d+)\]", line)
-                if node == "plan":
+                if line == "TRIAGE: research request":
+                    status.update(label="Recalling memory…")
+                elif node == "plan":
                     status.update(label=f"Planned {progress['total']} sub-questions")
                 elif q:
                     status.update(label=f"Researching question {q.group(1)} of {progress['total']}…")
@@ -203,16 +208,24 @@ if st.button("Run research", type="primary", icon=":material/play_arrow:", disab
                 status.update(label="Writing the report…")
         try:
             result = run(goal.strip(), mode=mode_key, on_step=on_step)
-            st.session_state["result"] = result
-            st.session_state["goal"] = goal.strip()
-            status.update(label=f"Done · {len(result['trace'])} steps", state="complete", expanded=False)
+            if result.get("is_research", True):
+                st.session_state["result"] = result
+                st.session_state["goal"] = goal.strip()
+                status.update(label=f"Done · {len(result['trace'])} steps", state="complete", expanded=False)
+            else:  # small talk: triage answered directly, nothing was researched or saved
+                status.update(label="Not a research request", state="complete", expanded=False)
+                notice = ("info", result["report"])
         except ValueError as e:  # invalid input, e.g. a blank goal
             status.update(label="Check your input", state="error", expanded=False)
-            st.warning(str(e))
+            notice = ("warning", str(e))
         except Exception as e:
             status.update(label="Research failed", state="error", expanded=True)
-            st.error(f"The research run failed: {e}. If this mentions a rate limit, the free Groq quota is "
-                     "used up for now; wait a few minutes and try again.")
+            notice = ("error", f"The research run failed: {e}. If this mentions a rate limit, the free Groq "
+                               "quota is used up for now; wait a few minutes and try again.")
+    if notice:
+        if notice[0] != "error":
+            wait_note.empty()  # no research happened, so the timing note doesn't apply
+        {"info": st.info, "warning": st.warning, "error": st.error}[notice[0]](notice[1])
 
 # ---------------- main: results ----------------
 open_id = st.session_state.pop("open_run_id", None)

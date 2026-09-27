@@ -30,6 +30,9 @@ def main():
         state = run(goal, mode=args.mode, on_step=show)
     except ValueError as e:  # invalid input such as an over-long goal
         sys.exit(str(e))
+    if not state.get("is_research", True):  # small talk: answered directly
+        print("\n" + state["report"])
+        return
     print("\n" + "=" * 70 + "\n" + state["report"] + "\n" + "=" * 70)
     print(f"Saved to {state['report_path']}")
 

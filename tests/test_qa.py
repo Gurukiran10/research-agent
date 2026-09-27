@@ -107,3 +107,55 @@ def test_every_prompt_tells_the_model_todays_date():
 
 def test_critic_judges_by_evidence_not_training_cutoff():
     assert "knowledge cutoff" in prompts.REFLECTOR
+
+
+# ---------- triage: small talk must not trigger a research run ----------
+class _NoLLM:
+    """Fails the test if any model is called."""
+
+    def __getattr__(self, name):
+        raise AssertionError("the LLM should not be called for this input")
+
+
+@pytest.mark.parametrize("message", ["hii", "Hello!", "hey there", "thanks", "good morning", "ok"])
+def test_greetings_get_an_instant_reply_without_llm_or_memory(message, tmp_path, monkeypatch):
+    from agent import nodes
+
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: _NoLLM())
+    monkeypatch.setattr(memory, "MEMORY_DB", tmp_path / "m.sqlite")
+    state = run(message)
+    assert state["is_research"] is False and "research agent" in state["report"]
+    assert memory.count_runs() == 0  # small talk is not saved as research history
+
+
+@pytest.mark.parametrize("goal", ["history of India", "hi-tech industry in Bangalore", "testing frameworks for python"])
+def test_topics_that_start_like_greetings_are_still_research(goal):
+    from agent import nodes
+
+    assert not nodes.GREETING_RE.match(goal)
+
+
+def test_clear_requests_skip_the_llm_intent_check(monkeypatch):
+    from agent import nodes
+
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: _NoLLM())
+    out = nodes.triage({"goal": "Compare LangGraph and CrewAI for agents", "trace": []})
+    assert out["is_research"] is True
+
+
+@pytest.mark.parametrize("is_research, expected_route", [(True, "recall"), (False, "end")])
+def test_short_inputs_are_decided_by_the_llm(is_research, expected_route, monkeypatch):
+    from agent import nodes
+
+    class Decider:
+        def with_structured_output(self, schema, **kw):
+            return self
+
+        def invoke(self, prompt):
+            return nodes.Triage(is_research=is_research, reply="I research topics - try 'EV market in India'.")
+
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: Decider())
+    out = nodes.triage({"goal": "who are you", "trace": []})
+    assert nodes.after_triage(out) == expected_route
+    if not is_research:
+        assert out["report"].startswith("I research topics")

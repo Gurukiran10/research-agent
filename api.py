@@ -42,7 +42,10 @@ def research(req: ResearchRequest):
         state = run(req.goal, mode=req.mode)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if not state.get("is_research", True):  # small talk: answered directly, nothing saved
+        return {"is_research": False, "reply": state["report"]}
     return {
+        "is_research": True,
         "run_id": state["run_id"],
         "plan": state["plan"],
         "findings": state["findings"],

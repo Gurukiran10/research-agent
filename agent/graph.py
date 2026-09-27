@@ -8,6 +8,7 @@ from .state import ResearchState
 
 def build_graph():
     g = StateGraph(ResearchState)
+    g.add_node("triage", nodes.triage)
     g.add_node("recall", nodes.recall)
     g.add_node("plan", nodes.plan)
     g.add_node("act", nodes.act)
@@ -17,7 +18,8 @@ def build_graph():
     g.add_node("write", nodes.write)
     g.add_node("remember", nodes.remember)
 
-    g.add_edge(START, "recall")
+    g.add_edge(START, "triage")
+    g.add_conditional_edges("triage", nodes.after_triage, {"recall": "recall", "end": END})
     g.add_edge("recall", "plan")
     g.add_edge("plan", "act")
     g.add_conditional_edges("act", nodes.after_act, {"tools": "tools", "record": "record"})
