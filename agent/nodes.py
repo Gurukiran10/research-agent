@@ -263,7 +263,7 @@ def reflect(state: ResearchState) -> dict:
             mode_label=get_mode(state.get("mode")).label,
             mode_sections=", ".join(get_mode(state.get("mode")).sections),
         ), 0.0,
-        default=Critique(sufficient=True, critique="(critic unavailable - proceeding to write)"),
+        default=Critique(sufficient=True, critique=""),  # no critique text leaks into the report
     )
     rounds = state.get("reflection_rounds", 0)
     update = {"critique": result.critique, "reflection_rounds": rounds + 1}
@@ -272,7 +272,7 @@ def reflect(state: ResearchState) -> dict:
         update["plan"] = state["plan"] + follow_ups
         update["trace"] = _log(state, f"REFLECT: gaps found - {result.critique}\nAdding:\n" + _bullets(follow_ups))
     elif result.sufficient:
-        update["trace"] = _log(state, f"REFLECT: findings sufficient - {result.critique}")
+        update["trace"] = _log(state, f"REFLECT: findings sufficient - {result.critique or '(critic unavailable, likely a rate limit)'}")
     else:
         update["trace"] = _log(state, f"REFLECT: reflection budget used - writing with noted limitations. {result.critique}")
     return update
@@ -307,7 +307,11 @@ def write(state: ResearchState) -> dict:
         lessons=_bullets(state.get("lessons", [])),
     )
     try:
-        report = invoke_with_patience(lambda: get_llm(0.3).invoke(prompt)).content
+        response = invoke_with_patience(lambda: get_llm(0.3).invoke(prompt))
+        report = response.content
+        if (getattr(response, "response_metadata", None) or {}).get("finish_reason") == "length":
+            report = _repair_truncated(report, state.get("critique", ""))
+            note = "report hit the model's output limit, trimmed to complete sections and saved"
     except Exception as e:
         # Every model is rate-limited: never lose a finished research run -
         # deliver the verified findings as the report instead.
@@ -320,6 +324,19 @@ def write(state: ResearchState) -> dict:
     path = REPORTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{mode.key}-{slug}.md"
     path.write_text(report, encoding="utf-8")
     return {"report": report, "report_path": str(path), "trace": _log(state, f"WRITE: {note} to {path.name}")}
+
+
+def _repair_truncated(report: str, critique: str) -> str:
+    """The model stopped at its output-token limit: drop the half-finished last
+    line (and a dangling heading) and close with a Limitations section, so the
+    report never ends mid-sentence."""
+    lines = report.rstrip().splitlines()[:-1]
+    while lines and (not lines[-1].strip() or lines[-1].lstrip().startswith("#")):
+        lines.pop()
+    body = "\n".join(lines).split("\n## Limitations")[0].rstrip()
+    note = "- This report was shortened because the free model reached its output limit."
+    extra = f"\n- {critique}" if critique else ""
+    return f"{body}\n\n## Limitations\n\n{note}{extra}"
 
 
 def _report_from_findings(state: ResearchState, cite_inline, error: Exception) -> str:

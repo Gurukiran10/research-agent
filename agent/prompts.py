@@ -110,7 +110,7 @@ Rules:
   fact has no marker, cite from that answer's "Sources for this answer" list.
   Use no other citation format and do NOT write or mention a Sources section -
   it is added automatically.
-- Maximum 600 words. Finish every section; do not stop mid-sentence.
+- Maximum 450 words and at most 6 rows per table. Finish every section; do not stop mid-sentence.
 """
 
 LESSON_EXTRACTOR = """A user rated a research report {rating_word} and left this feedback:

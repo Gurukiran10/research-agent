@@ -14,7 +14,7 @@ from langchain_groq import ChatGroq
 from .config import GROQ_API_KEY, GROQ_FALLBACK_MODELS, GROQ_MODEL, REASONING_EFFORT
 
 DAILY_LIMIT_COOLDOWN_S = 15 * 60
-PATIENCE_S = 20  # wait before one retry when every model failed (per-minute limits clear fast)
+PATIENCE_S = 60  # wait before one retry when every model failed (per-minute limits reset within a minute)
 _exhausted_until: dict[str, float] = {}  # model name -> time it may be tried again
 
 
@@ -25,9 +25,9 @@ def _chat(model: str, temperature: float) -> ChatGroq:
         # gpt-oss models "think" before answering; low effort keeps runs fast and cheap.
         extra = {"reasoning_effort": REASONING_EFFORT}
     elif "qwen" in model:
-        # keep qwen's <think> reasoning out of the answer text; its free tier
-        # allows only 1000 output tokens/minute, so requests must ask for less
-        extra = {"reasoning_format": "hidden", "max_tokens": 900}
+        # its free tier allows only 1000 output tokens/minute: turn off hidden
+        # "thinking" (which spends that budget) and ask for less than the cap
+        extra = {"reasoning_effort": "none", "max_tokens": 950}
     else:
         extra = {}
     # max_retries handles short per-minute 429s with back-off.

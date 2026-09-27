@@ -159,3 +159,29 @@ def test_short_inputs_are_decided_by_the_llm(is_research, expected_route, monkey
     assert nodes.after_triage(out) == expected_route
     if not is_research:
         assert out["report"].startswith("I research topics")
+
+
+# ---------- a report cut off by the model's output limit ----------
+def test_truncated_report_is_trimmed_and_closed_with_limitations(tmp_path, monkeypatch):
+    from langchain_core.messages import AIMessage
+
+    from agent import nodes
+
+    cut = ("# Market Report: EV Charging\n\n## Key Players\n\n* Tata Power leads [1].\n\n"
+           "## Drivers, Barriers & Trends\n\n* **Government:** FAME India drives demand [1].\n"
+           "* **Infrastructure:** stations are projected to expand at a CAGR of ~51.93% from FY 2")
+
+    class Truncating:
+        def invoke(self, prompt):
+            return AIMessage(content=cut, response_metadata={"finish_reason": "length"})
+
+    monkeypatch.setattr(nodes, "get_llm", lambda *a, **k: Truncating())
+    monkeypatch.setattr(nodes, "REPORTS_DIR", tmp_path)
+    f = {"question": "q", "answer": "a (source: https://a.com/x)", "sources": ["https://a.com/x"]}
+    out = nodes.write({"goal": "g", "findings": [f], "critique": "Estimates vary.", "trace": []})
+    report = out["report"]
+    assert "from FY 2" not in report                      # half-sentence removed
+    assert "FAME India drives demand" in report           # complete lines kept
+    assert "## Limitations" in report and "output limit" in report and "Estimates vary." in report
+    assert report.rstrip().endswith("1. https://a.com/x")  # sources still appended
+    assert "output limit" in out["trace"][-1]
